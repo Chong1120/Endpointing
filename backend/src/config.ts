@@ -136,9 +136,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     publicApiUrl,
     webhooksEnabled: isPublicHttpsUrl(publicApiUrl),
-    corsOrigins: e.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
+    corsOrigins: e.CORS_ORIGINS.split(',').map(normalizeOrigin).filter(Boolean),
     maxUploadBytes: Math.round(e.MAX_UPLOAD_MB * 1024 * 1024),
     signedUrlTtlSeconds: e.SIGNED_URL_TTL_SECONDS,
     uploadTmpDir: e.UPLOAD_TMP_DIR ?? path.join(os.tmpdir(), 'safecall-uploads'),
   };
+}
+
+/**
+ * Browsers send a bare origin such as "https://site.vercel.app", so tolerate
+ * what people paste into CORS_ORIGINS: a trailing slash or path, quotes,
+ * capitals or a missing scheme. Wildcards ("https://*.vercel.app") pass through.
+ */
+export function normalizeOrigin(value: string): string {
+  const trimmed = value.trim().replace(/^["']+|["']+$/g, '').trim();
+  if (!trimmed) return '';
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `${/^(localhost|127\.0\.0\.1)(:|$)/i.test(trimmed) ? 'http' : 'https'}://${trimmed}`;
+  return (withScheme.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]+/i)?.[0] ?? withScheme).toLowerCase();
 }

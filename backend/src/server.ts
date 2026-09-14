@@ -27,6 +27,7 @@ const server = createApp(deps).listen(config.port, () => {
   logger.info(
     {
       port: config.port,
+      corsOrigins: config.corsOrigins,
       completionSignal: config.webhooksEnabled ? `webhook via ${config.publicApiUrl}` : 'status-check fallback (no public HTTPS URL)',
     },
     'SafeCall API listening',
