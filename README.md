@@ -137,7 +137,7 @@ All parameters were checked against the live docs ([agent instructions](https://
 
 ## Local setup
 
-Prerequisites: **Node.js 20.11+** (tested on 22), a **Supabase project** (the free plan is fine) and an **AssemblyAI API key**. No Docker is needed. Local development uses your real Supabase project.
+Prerequisites: **Node.js 22+** (the Supabase client needs Node's built-in WebSocket), a **Supabase project** (the free plan is fine) and an **AssemblyAI API key**. No Docker is needed. Local development uses your real Supabase project.
 
 ```powershell
 git clone https://github.com/Chong1120/Endpointing.git safecall

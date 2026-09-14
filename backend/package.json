@@ -5,7 +5,7 @@
   "description": "SafeCall API (Express, AssemblyAI, Supabase) with in-process background processing",
   "type": "module",
   "engines": {
-    "node": ">=20.11"
+    "node": "22.x"
   },
   "scripts": {
     "dev:api": "tsx watch --env-file-if-exists=.env src/server.ts",
