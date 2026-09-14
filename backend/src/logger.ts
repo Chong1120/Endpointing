@@ -1,4 +1,15 @@
+import { createRequire } from 'node:module';
 import { pino, type Logger } from 'pino';
+
+/** pino-pretty is a dev-only package; production installs may not have it. */
+function prettyPrinterAvailable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Structured logger. Logs carry IDs, statuses and counts only — never
@@ -6,7 +17,7 @@ import { pino, type Logger } from 'pino';
  * in case an object with those fields is ever logged by mistake.
  */
 export function createLogger(level: string, service = 'safecall'): Logger {
-  const pretty = process.env.NODE_ENV === 'development' && process.env.LOG_FORMAT !== 'json';
+  const pretty = process.env.NODE_ENV === 'development' && process.env.LOG_FORMAT !== 'json' && prettyPrinterAvailable();
   return pino({
     level,
     base: { service },

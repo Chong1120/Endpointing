@@ -209,7 +209,7 @@ Copy the **Session pooler** string from **Connect** in the Supabase dashboard an
 
 **2. Railway (the API): one service, nothing else.**
 1. Create a project from this GitHub repo.
-2. In the service settings, set **Root Directory** to `/backend` and **Railway Config File** to `/backend/railway.json`. The config file path is absolute; it does not follow the root directory. The file sets the build (`npm ci --include=dev && npm run build`), the start command (`npm run start:api`), the `/health` check and the watch paths.
+2. In the service settings, set **Root Directory** to `/backend`, **Healthcheck Path** to `/health` and **Watch Paths** to `/backend/**`, and keep **Serverless** off. Leave the build and start commands empty: Railway runs `npm ci`, `npm run build` and `npm start` from `backend/package.json`. `backend/railway.json` holds the same settings for services that can still use Railway's deprecated config-as-code.
 3. **Variables:**
    ```
    NODE_ENV=production
