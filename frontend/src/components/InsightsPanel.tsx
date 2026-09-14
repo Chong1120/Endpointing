@@ -1,0 +1,129 @@
+import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
+import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
+import CheckCircleOutlineRounded from '@mui/icons-material/CheckCircleOutlineRounded';
+import RadioButtonUncheckedRounded from '@mui/icons-material/RadioButtonUncheckedRounded';
+import { Box, Chip, Divider, Stack, Typography } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import type { ReactNode } from 'react';
+import type { CallAnalysis } from '../services/types';
+import { brand } from '../theme';
+import { RedactedText } from './RedactedText';
+import { SentimentChip } from './common';
+
+const PROFESSIONALISM = { excellent: 'Excellent', good: 'Good', needs_improvement: 'Needs improvement' } as const;
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Box>
+      <Typography variant="overline" color="text.secondary">
+        {label}
+      </Typography>
+      <Box sx={{ mt: 0.25 }}>{children}</Box>
+    </Box>
+  );
+}
+
+/** Structured AI output generated from the redacted transcript only. */
+export function InsightsPanel({ analysis }: { analysis: CallAnalysis }) {
+  return (
+    <Stack spacing={2}>
+      <Field label="AI summary">
+        <Typography variant="body2" sx={{ lineHeight: 1.65 }}>
+          <RedactedText text={analysis.summary} />
+        </Typography>
+      </Field>
+
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+        <Box sx={{ flex: 1 }}>
+          <Field label="Customer issue">
+            <Typography variant="body2">
+              <RedactedText text={analysis.customer_issue} />
+            </Typography>
+          </Field>
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <Field label="Resolution">
+            <Typography variant="body2">
+              <RedactedText text={analysis.resolution} />
+            </Typography>
+          </Field>
+        </Box>
+      </Stack>
+
+      <Field label="Sentiment">
+        {analysis.sentiment_trend ? (
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <SentimentChip sentiment={analysis.sentiment_trend.start} />
+            <ArrowForwardRounded sx={{ fontSize: 16, color: 'text.secondary' }} />
+            <SentimentChip sentiment={analysis.sentiment_trend.end} />
+            <Typography variant="caption" color="text.secondary" sx={{ pl: 0.5 }}>
+              Overall: {analysis.sentiment}
+            </Typography>
+          </Stack>
+        ) : (
+          <SentimentChip sentiment={analysis.sentiment} />
+        )}
+      </Field>
+
+      <Field label="Topics">
+        <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+          {analysis.topics.map((topic) => (
+            <Chip key={topic} size="small" label={topic} sx={{ bgcolor: '#EEF2F6' }} />
+          ))}
+        </Stack>
+      </Field>
+
+      <Field label="Action items">
+        {analysis.action_items.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            No follow-up needed.
+          </Typography>
+        ) : (
+          <Stack component="ul" spacing={0.75} sx={{ listStyle: 'none', p: 0, m: 0 }}>
+            {analysis.action_items.map((item) => (
+              <Stack component="li" key={item} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                <RadioButtonUncheckedRounded sx={{ fontSize: 16, mt: '2px', color: 'primary.main' }} />
+                <Typography variant="body2">
+                  <RedactedText text={item} />
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        )}
+      </Field>
+
+      {analysis.qa && (
+        <>
+          <Divider />
+          <Field label="Quality review">
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.75 }}>
+              <Chip
+                size="small"
+                icon={analysis.qa.issue_resolved ? <CheckCircleOutlineRounded /> : <RadioButtonUncheckedRounded />}
+                label={analysis.qa.issue_resolved ? 'Issue resolved' : 'Not resolved'}
+                variant="outlined"
+              />
+              <Chip size="small" label={`Agent: ${PROFESSIONALISM[analysis.qa.agent_professionalism]}`} variant="outlined" />
+            </Stack>
+            {analysis.qa.notes && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                <RedactedText text={analysis.qa.notes} />
+              </Typography>
+            )}
+          </Field>
+        </>
+      )}
+
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: 'center', p: 1.25, borderRadius: 2, bgcolor: alpha(brand.teal, 0.06), color: 'primary.dark' }}
+      >
+        <AutoAwesomeRounded sx={{ fontSize: 16 }} />
+        <Typography variant="caption" sx={{ fontWeight: 500 }}>
+          Generated by {analysis.model} via AssemblyAI LLM Gateway from the redacted transcript only.
+        </Typography>
+      </Stack>
+    </Stack>
+  );
+}

@@ -1,0 +1,17 @@
+# Local infrastructure for SafeCall development.
+#
+# Redis backs the BullMQ job queue. Supabase (Postgres/Auth/Storage) runs via
+# the Supabase CLI (`npm run supabase:start`), which manages its own containers.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: safecall-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - safecall-redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  safecall-redis-data:

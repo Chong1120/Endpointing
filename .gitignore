@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Environment / secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local Supabase CLI state
+supabase/.branches/
+supabase/.temp/
+
+# Temporary upload scratch space (raw audio must never be committed)
+tmp/
+uploads/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Vercel / Railway local state
+.vercel/
+.railway/

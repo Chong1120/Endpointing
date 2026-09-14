@@ -1,0 +1,341 @@
+# SafeCall
+
+**Turn sensitive conversations into safe, reusable business data.**
+
+SafeCall is a privacy-first archive for contact-center recordings. It sends every call through AssemblyAI for transcription, speaker separation and PII redaction, for both the transcript *and* the audio. Only the safe artifacts are stored: redacted audio, a redacted speaker-labelled transcript, PII statistics, AI insights generated from the redacted text, and a complete audit trail.
+
+Built for the **AssemblyAI Voice Agent Hackathon (lablab.ai, September 2026)**.
+
+> **Disclaimer.** SafeCall is a hackathon prototype demonstrating privacy-oriented call-data processing. Automated PII detection/redaction should not be represented as a universal legal-compliance certification or a substitute for an organization's legal, security, privacy, and governance controls.
+
+![Call detail](docs/screenshots/05-call-detail.png)
+
+---
+
+## Contents
+
+1. [Problem](#problem) · 2. [Solution](#solution) · 3. [Architecture](#architecture) · 4. [Technology stack](#technology-stack) · 5. [AssemblyAI integration](#assemblyai-integration) · 6. [Security model](#security-model) · 7. [Local setup](#local-setup) · 8. [Environment variables](#environment-variables) · 9. [Database setup](#database-setup) · 10. [Deployment](#deployment) · 11. [Demo](#demo) · 12. [Screenshots](#screenshots) · 13. [API](#api-endpoints) · 14. [Tests](#tests) · 15. [Limitations](#limitations) · 16. [Roadmap](#roadmap)
+
+## Problem
+
+Call recordings are some of the most valuable data a support organization has: customer issues, product feedback, agent quality, training material. They are also full of names, phone numbers, addresses, card numbers and account details. So they get locked away, deleted, or copied into analytics and AI tools with the sensitive details still inside.
+
+## Solution
+
+SafeCall moves the privacy boundary to the front of the pipeline:
+
+```
+RAW CALL  →  PROTECTED BY ASSEMBLYAI  →  SAFE CALL  →  AI ANALYSIS
+(temporary)  (transcribe · diarize ·      (redacted audio +  (LLM sees redacted
+              detect · redact text+audio)  transcript + stats) text only)
+```
+
+- **Upload** a recording, or run one of four synthetic demo calls.
+- **AssemblyAI** (Universal-3.5 Pro, falling back to Universal-2) transcribes it, separates speakers, detects PII against the chosen policy, redacts the transcript and produces a redacted audio file with the PII silenced.
+- The **raw upload is deleted** as soon as AssemblyAI has it. After archiving, the transcript is **deleted at AssemblyAI** too.
+- The **safe archive** stores redacted audio in a private bucket, the redacted transcript and utterances, PII counts per entity type, and an audit record of every step.
+- **AI analysis** via AssemblyAI LLM Gateway runs *only* on the redacted transcript. It produces a summary, customer issue, resolution, sentiment, topics, action items, speaker roles and a QA note.
+- **Search, analytics, a PII protection report, safe-audio playback via signed URLs, and safe dataset export** (JSONL/CSV) make the data reusable.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  U[User] -->|HTTPS| FE[React · Vite · MUI<br/>Vercel]
+  FE -->|Supabase Auth JWT| API[Node.js · Express API<br/>Railway]
+  API -->|enqueue| Q[(Redis · BullMQ)]
+  Q --> W[Worker<br/>Railway]
+  API --> DB[(Supabase Postgres<br/>+ Auth)]
+  W --> DB
+  W --> ST[(Supabase Storage<br/>private bucket)]
+  API -->|upload + submit| AAI[AssemblyAI<br/>pre-recorded STT + PII redaction]
+  AAI -->|webhook| API
+  W -->|redacted transcript + audio| AAI
+  W -->|redacted transcript only| LLM[AssemblyAI LLM Gateway]
+```
+
+Detailed data flow, idempotency and the privacy boundary are in [docs/architecture.md](docs/architecture.md).
+
+```
+safecall/
+├── frontend/            React + Vite + MUI app (pages, components, layouts, services, hooks)
+├── backend/
+│   ├── src/
+│   │   ├── routes/      REST API + /webhooks/assemblyai
+│   │   ├── middleware/  auth, upload, errors
+│   │   ├── services/    assemblyai/ · llm/ · storage/ · audit · pii · analytics · export
+│   │   ├── pipeline/    intake (upload → AssemblyAI) and processCall (post-webhook)
+│   │   ├── workers/     BullMQ worker entrypoint
+│   │   ├── db/          repository interfaces + Supabase implementations
+│   │   └── app.ts       Express app factory
+│   ├── samples/         synthetic demo recordings + generator script
+│   └── tests/           Vitest suite (AssemblyAI mocked)
+├── database/migrations/ SQL schema
+├── docs/                architecture + screenshots
+├── supabase/config.toml local Supabase CLI stack
+└── docker-compose.yml   local Redis
+```
+
+## Technology stack
+
+| Layer | Choice |
+| --- | --- |
+| Frontend | React 19, Vite 8, Material UI 9, React Router 7, TypeScript |
+| API & worker | Node.js 22, Express 5, TypeScript, Multer, zod, pino |
+| Voice AI | Official `assemblyai` Node SDK 4.41 (pre-recorded STT, PII redaction, redacted audio) + LLM Gateway |
+| Queue | Redis + BullMQ 6 |
+| Database / Auth / Storage | Supabase Postgres (full-text search), Supabase Auth, Supabase Storage (private bucket) |
+| Hosting | Vercel (frontend), Railway (API, worker, Redis), Supabase |
+| Tests | Vitest + Supertest |
+
+## AssemblyAI integration
+
+All parameters were checked against the live docs ([agent instructions](https://www.assemblyai.com/docs/agent-instructions.md), [llms.txt](https://www.assemblyai.com/docs/llms.txt), [PII redaction](https://www.assemblyai.com/docs/guardrails/redact-pii-from-transcripts)) and the SDK typings on 2026-09-14.
+
+**Transcription request** (`backend/src/services/assemblyai/transcription.ts`):
+
+| Parameter | Value | Why |
+| --- | --- | --- |
+| `speech_models` | `["universal-3-5-pro", "universal-2"]` | Best model with a fallback |
+| `speaker_labels` | `true` | Agent/customer separation |
+| `language_detection` | `true` | Multilingual recordings |
+| `redact_pii` | `true` | Transcript redaction |
+| `redact_pii_policies` | Preset list (Contact Center / Financial / Healthcare / Custom) | Only documented policy names are used |
+| `redact_pii_sub` | `entity_name` | `[PHONE_NUMBER]`-style labels that can be counted |
+| `redact_pii_audio` | `true` | Redacted audio file |
+| `redact_pii_audio_quality` | `mp3` (or `wav`) | `REDACTED_AUDIO_FORMAT` |
+| `redact_pii_audio_options.override_audio_redaction_method` | `silence` | PII silenced instead of beeped |
+| `webhook_url` + `webhook_auth_header_name/value` | `…/webhooks/assemblyai?call_id=…` + shared secret | No long polling; authenticated deliveries |
+| `redact_pii_return_unredacted` | **never set** | The unredacted transcript is never requested |
+
+- **Upload.** `client.files.upload(tempPath)` sends the file, then the temp file is deleted.
+- **Webhook.** The handler authenticates the header, enqueues a BullMQ job and returns 200 at once. The worker fetches the transcript with `client.transcripts.get`, the redacted audio with `client.transcripts.redactedAudio` (the URL is valid for 24 h, so it is copied into private storage straight away), and finally calls `client.transcripts.delete`.
+- **LLM Gateway.** Calls `https://llm-gateway.assemblyai.com/v1/chat/completions` with the prompt rules from the spec, `post_processing_steps: json-repair`, and zod validation.
+  - Models that support `response_format` get a strict JSON Schema.
+  - Models without it get the same schema in the prompt. `LLM_RESPONSE_FORMAT=auto` checks the gateway's `/v1/models`.
+- **No deprecated parameters.** `summarization`, `auto_chapters` and LeMUR are not used.
+
+## Security model
+
+- **Raw audio is transient.** Multer streams uploads to the OS temp directory. The file is deleted immediately after it reaches AssemblyAI (`RAW_UPLOAD_DELETED`), and a periodic purge removes anything left by a crash.
+- **Only redacted data is archived.** The worker refuses transcripts without `redact_pii`, copies only safe fields, and never reads `unredacted_*`.
+- **The LLM sees redacted text only.** `analyze()` accepts a branded `SafeText` type, so raw text can't be passed by accident. Its input is rebuilt from the archived redacted utterances.
+- **Tenant isolation.**
+  - Every API query is scoped to the caller's organization from the Supabase JWT.
+  - Tables have RLS enabled with no policies for the `anon` and `authenticated` roles, so the browser can't read them directly.
+  - The service-role key exists only on the server.
+- **Private storage.** The `safe-call-audio` bucket is private (the API forces it private at startup). Playback uses 5-minute signed URLs, and every issuance is audited (`SAFE_AUDIO_ACCESSED`).
+- **Webhooks** are authenticated with a shared header secret (constant-time comparison) and deduplicated per call.
+- **Audit metadata is sanitized.** Content-bearing keys are dropped, so audit entries hold IDs, stages and counts only.
+- **Logs** never include transcript text, audio URLs or credentials. pino redacts those fields as a safety net.
+- **Safe errors.** Users see readable messages; stack traces and internals are only logged.
+- **CSV export** neutralizes spreadsheet formulas.
+
+## Local setup
+
+Prerequisites: **Node.js 20.11+** (tested on 22), **Docker Desktop**, and an **AssemblyAI API key**.
+
+```bash
+git clone <this repo> safecall && cd safecall
+npm install && npm run install:all          # root tools + backend + frontend
+
+# 1. Infrastructure: Redis (docker compose) + local Supabase (Postgres, Auth, Storage)
+npm run infra:up                            # prints the local Supabase URL and keys
+
+# 2. Configuration
+cp backend/.env.example backend/.env        # fill ASSEMBLYAI_API_KEY, ASSEMBLYAI_WEBHOOK_SECRET,
+                                            # SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
+cp frontend/.env.example frontend/.env      # fill VITE_SUPABASE_ANON_KEY
+
+# 3. Database schema + private storage bucket
+npm run db:migrate
+
+# 4. API (http://localhost:4000), worker and web app (http://localhost:5173)
+npm run dev
+```
+
+Generate the webhook secret with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. `npx supabase status` shows the local keys again.
+
+**Webhooks in local development.** AssemblyAI must be able to reach the API over HTTPS. Without a public URL, the worker uses a status-check fallback (delayed queue jobs), so everything still works. To test the real webhook path, run a tunnel and restart the API:
+
+```bash
+npx cloudflared tunnel --url http://localhost:4000   # prints https://<random>.trycloudflare.com
+# backend/.env → PUBLIC_API_URL=https://<random>.trycloudflare.com
+```
+
+The synthetic demo recordings are committed in `backend/samples/`. To regenerate them with Windows' built-in voices, run `npm run samples:generate`.
+
+## Environment variables
+
+See [.env.example](.env.example) for the annotated list.
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `ASSEMBLYAI_API_KEY` | API + worker | AssemblyAI key (server-side only) |
+| `ASSEMBLYAI_WEBHOOK_SECRET` | API | Shared secret echoed in `X-SafeCall-Webhook-Secret` |
+| `ASSEMBLYAI_DELETE_AFTER_ARCHIVE` | Worker | Delete the transcript at AssemblyAI after archiving (default `true`) |
+| `REDACTED_AUDIO_FORMAT` | API + worker | `mp3` (default) or `wav` |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | API + worker | Server-side Supabase access |
+| `SUPABASE_ANON_KEY` | Frontend (`VITE_SUPABASE_ANON_KEY`) | Browser auth only |
+| `SUPABASE_AUDIO_BUCKET` | API + worker | Private bucket name (default `safe-call-audio`) |
+| `DATABASE_URL` | Migrations only | Postgres connection string |
+| `REDIS_URL` | API + worker | BullMQ connection |
+| `PUBLIC_API_URL` | API | Public HTTPS base URL used for the AssemblyAI webhook |
+| `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `LLM_RESPONSE_FORMAT` | Worker | LLM Gateway model settings |
+| `CORS_ORIGINS` | API | Allowed browser origins (wildcards such as `https://*.vercel.app` are supported) |
+| `MAX_UPLOAD_MB`, `SIGNED_URL_TTL_SECONDS` | API | Upload limit (default 200 MB), signed URL lifetime (default 300 s) |
+| `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Frontend | Public build-time values |
+
+## Database setup
+
+Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql).
+
+- **Tables:** `organizations`, `users`, `calls`, `call_utterances`, `audit_logs`, `pii_policy_settings`.
+- **JSONB columns:** `pii_counts`, `ai_summary` and audit `metadata`.
+- **Indexes:** organization, status, `created_at`, department, sentiment, and GIN indexes on the search vector, PII types and topics.
+- **Search:** a stored full-text search vector over safe data only, queried through the `search_calls()` function.
+- **Setup helper:** `ensure_user_profile()` creates an organization and profile on first sign-in.
+- **Storage:** the private `safe-call-audio` bucket.
+
+```bash
+DATABASE_URL=postgresql://... npm run db:migrate    # tracks applied files in schema_migrations
+```
+
+Hosted Supabase: use the **Session pooler** connection string from *Project Settings → Database*, or paste the SQL file into the SQL editor.
+
+## Deployment
+
+**Supabase**
+1. Create a project, then run the migration (see above).
+2. In *Authentication → Providers → Email*, either disable "Confirm email" for a demo or configure SMTP.
+3. In *Authentication → URL configuration*, set the Site URL to your Vercel URL.
+4. Copy the project URL, the anon key and the service-role key.
+
+**Railway (API, worker, Redis)**
+1. Create a project from this GitHub repo and add a **Redis** database.
+2. **API service:** root directory `/backend`, Railway Config File `/backend/railway.json`, watch paths `/backend/**`. The config file path is absolute; it does not follow the root directory.
+   - Build with `npm ci --include=dev && npm run build`, start with `npm run start:api`; the health check is `/health`. `--include=dev` keeps the TypeScript compiler available when `NODE_ENV=production` is set.
+   - Set the backend variables, with `REDIS_URL=${{Redis.REDIS_URL}}`.
+   - Generate a domain and set `PUBLIC_API_URL=https://<api-domain>`.
+3. **Worker service:** same repo, root directory `/backend`, config file `/backend/railway.worker.json` (start with `npm run start:worker`), watch paths `/backend/**`. It uses the same variables; `PUBLIC_API_URL` is not needed.
+4. Set `CORS_ORIGINS=https://<your-app>.vercel.app,https://*.vercel.app`.
+
+**Vercel (frontend)**
+1. Import the repo with root directory `frontend`. The framework is detected as Vite, and `vercel.json` handles SPA rewrites and security headers.
+2. Set `VITE_API_URL=https://<api-domain>`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+
+Uploads go straight from the browser to the Railway API. They never pass through Vercel functions, which have body-size limits.
+
+**AssemblyAI account settings (recommended).** Opt out of the model-improvement program. Set a short time-to-live on the *Data Controls* page as a backstop to SafeCall's own deletion.
+
+Optional custom domains: `app.safecall.example` (Vercel) and `api.safecall.example` (Railway).
+
+## Demo
+
+1. Sign up at `/login` (the organization name you enter becomes your isolated workspace).
+2. **Dashboard → Load demo calls.** This runs four synthetic recordings through the *real* pipeline (real AssemblyAI calls):
+   | Sample | Shows |
+   | --- | --- |
+   | Account update (Customer Support) | Name, phone, email, address, card number and expiry are redacted. The spoken CVV is **not** caught (see [Limitations](#limitations)) |
+   | Tech support (Technical Support) | Two speakers, many turns, an account number |
+   | General inquiry | No PII — nothing is over-redacted |
+   | Billing dispute (Billing, Financial policy) | Name, date of birth, account number, email, refund discussion |
+3. Open a call while it processes. The **Processing** page shows each real stage as the backend records it, with no simulated progress.
+4. Open the **safe archive**:
+   - the PII protection report;
+   - a **safe recording** you can play, with a timeline marking the redacted segments (click a transcript timestamp to jump there);
+   - the redacted transcript with agent/customer roles;
+   - AI insights;
+   - the audit trail.
+5. **Calls & search.** Search for "refund" or "card" and filter by PII type, sentiment, department or date. Then use **Export safe dataset** (JSONL or CSV).
+6. **Analytics**, **PII policies** (edit a preset) and **Audit trail** (every step, playback and export).
+
+All sample data is synthetic: 555-01xx phone numbers, `example.com` emails, and the standard `4111…` test card.
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Login](docs/screenshots/01-login.png) Login | ![Dashboard](docs/screenshots/02-dashboard.png) Dashboard |
+| ![Upload](docs/screenshots/03-upload.png) Upload | ![Processing](docs/screenshots/04-processing.png) Processing |
+| ![Call detail](docs/screenshots/05-call-detail.png) Safe archive | ![Search](docs/screenshots/06-search.png) Search |
+| ![Analytics](docs/screenshots/07-analytics.png) Analytics | ![Policies](docs/screenshots/08-policies.png) Policies |
+| ![Audit](docs/screenshots/09-audit.png) Audit trail | |
+
+To regenerate them against a running instance: `cd frontend && SAFECALL_EMAIL=… SAFECALL_PASSWORD=… node scripts/screenshots.mjs` (uses the installed Microsoft Edge).
+
+## API endpoints
+
+All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and are scoped to the caller's organization.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/api/calls` | Upload a recording (multipart: `file`, `department`, `policy_preset`, `analysis_enabled`) → 202 |
+| `GET` | `/api/calls` | List calls (`status`, `department`, `sentiment`, `pii_type`, `from`, `to`, `page`, `page_size`) |
+| `GET` | `/api/calls/:id` | Safe archive: call, redacted utterances, audit events |
+| `GET` | `/api/calls/:id/audio-url` | Short-lived signed URL for the redacted audio (audited) |
+| `GET` | `/api/calls/:id/audit` | Audit trail for one call |
+| `POST` | `/api/calls/:id/retry` | Resume a failed call from the failed stage |
+| `DELETE` | `/api/calls/:id` | Delete a call and its safe audio (admin) |
+| `GET` | `/api/search` | Full-text search over safe data (`q` + the list filters), with highlighted snippets |
+| `GET` | `/api/analytics` | Totals, PII by type, topics, sentiment, volume, processing time |
+| `GET` | `/api/audit` | Organization audit log (`call_id`, `event_type`, paging) |
+| `GET` | `/api/export` | Safe dataset export (`format=jsonl\|csv` + filters) |
+| `GET` / `PUT` / `DELETE` | `/api/policies[/:preset]` | View, customize or reset PII policy presets |
+| `GET` / `POST` | `/api/demo/samples[/:id]` | List or run the synthetic demo recordings |
+| `GET` | `/api/me` | Profile, organization, platform settings |
+| `POST` | `/webhooks/assemblyai` | AssemblyAI completion webhook (shared-secret header) |
+| `GET` | `/health` | Health check |
+
+## Tests
+
+```bash
+npm test            # Vitest: 85 tests, AssemblyAI + LLM Gateway mocked
+npm run typecheck   # backend + frontend
+```
+
+Coverage includes:
+- upload validation and temp-file cleanup;
+- authentication and organization isolation;
+- PII counting (including grouping of word-level markers);
+- webhook authentication and duplicate deliveries;
+- failed and successful AssemblyAI processing, and resumable retry;
+- storage paths and signed URLs;
+- LLM request shape and AI JSON validation;
+- audit sanitization, analytics and the export formats;
+- an end-to-end test: upload → AssemblyAI job → webhook → worker → safe archive.
+
+### Verified against real services (2026-09-14)
+
+Six synthetic calls ran through the real stack: AssemblyAI Universal-3.5 Pro, LLM Gateway, local Supabase, Redis/BullMQ.
+
+- **Webhooks.** AssemblyAI delivered completion webhooks through a Cloudflare quick tunnel, each recorded as `WEBHOOK_RECEIVED`. The status-check fallback was also used when no tunnel was running.
+- **Redaction.** Names, phone numbers, emails, addresses, card numbers, expiry dates, dates of birth and account numbers were redacted in both the transcript and the audio (silence). The no-PII call had zero redactions. The one miss, a spoken CVV, is listed under Limitations.
+- **Resumable retry.** Real LLM Gateway failures (a 400 for model access, a 429 rate limit) marked calls `FAILED` at the AI stage. Retry then completed them without transcribing again.
+- **Upload path.** A multipart upload through `POST /api/calls` left the temp directory empty after intake. The transcript was deleted at AssemblyAI once the archive was complete.
+- **Delete.** Deleting a call removed its safe audio and returned 404 afterwards. The deletion stays in the audit log.
+
+## Limitations
+
+- **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123". That applied to both the transcript and the audio, and adding `number_sequence` didn't catch it either. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
+- **PII counts are derived from redaction labels.** AssemblyAI redacts word by word, so SafeCall groups adjacent same-type labels into one entity. Two same-type entities separated only by a comma may be counted as one.
+- **LLM model access depends on your AssemblyAI account.** On the account used for development, only `qwen3.5-4b-32k-fast` was accessible; Claude, GPT and Gemini returned "no access". SafeCall supports both strict-schema and prompt-schema modes, so any accessible model works. Set `LLM_MODEL` accordingly.
+- **Original filenames are stored as metadata.** Avoid putting personal data in filenames.
+- **One organization per sign-up.** There are no invitations or SSO yet. Roles exist in the schema, but the UI only uses `admin`.
+- **Failed uploads can't be retried without the file.** If transcription fails before the archive exists, the raw file is gone by design, so the user uploads again.
+- **Tested mostly on English.** The synthetic calls use English Windows text-to-speech voices.
+- **Local development without a tunnel** uses the status-check fallback instead of webhooks.
+
+## Roadmap
+
+- pgvector semantic search over safe transcripts
+- Per-organization retention policies and automatic archive expiry
+- Team invitations, SSO and role-based permissions in the UI
+- Human review queue for low-confidence or high-risk calls
+- Streaming redaction for live calls (AssemblyAI streaming PII redaction)
+- Custom entity lists via `redact_static_entities` (product names, internal codes)
+- QA scorecards and coaching dashboards built on the safe dataset
+
+## License
+
+[MIT](LICENSE)

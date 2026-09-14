@@ -1,0 +1,41 @@
+{
+  "notice": "All sample recordings are synthetic (text-to-speech). Every name, phone number, email, address, account and card number is fictional.",
+  "samples": [
+    {
+      "id": "call-a",
+      "title": "Account update with full PII",
+      "file": "call-a-account-update.wav",
+      "department": "Customer Support",
+      "policyPreset": "CONTACT_CENTER",
+      "description": "Customer updates their profile and shares a name, phone number, email, home address and a payment card with CVV and expiry.",
+      "expectedPii": ["PERSON_NAME", "PHONE_NUMBER", "EMAIL_ADDRESS", "LOCATION_ADDRESS", "CREDIT_CARD_NUMBER", "CREDIT_CARD_EXPIRATION", "CREDIT_CARD_CVV"]
+    },
+    {
+      "id": "call-b",
+      "title": "Two-speaker technical support",
+      "file": "call-b-tech-support.wav",
+      "department": "Technical Support",
+      "policyPreset": "CONTACT_CENTER",
+      "description": "A longer agent/customer troubleshooting conversation that shows speaker separation, with an account number and a name.",
+      "expectedPii": ["PERSON_NAME", "ACCOUNT_NUMBER"]
+    },
+    {
+      "id": "call-c",
+      "title": "General inquiry with no PII",
+      "file": "call-c-general-inquiry.wav",
+      "department": "General Inquiry",
+      "policyPreset": "CONTACT_CENTER",
+      "description": "A short question about paperless billing. Nothing should be redacted, which proves SafeCall does not over-redact.",
+      "expectedPii": []
+    },
+    {
+      "id": "call-d",
+      "title": "Billing dispute and refund",
+      "file": "call-d-billing-refund.wav",
+      "department": "Billing",
+      "policyPreset": "FINANCIAL",
+      "description": "A duplicate-charge complaint resolved with a refund. Includes a name, date of birth, account number and email address.",
+      "expectedPii": ["PERSON_NAME", "DATE_OF_BIRTH", "ACCOUNT_NUMBER", "EMAIL_ADDRESS"]
+    }
+  ]
+}
