@@ -6,10 +6,8 @@
   "license": "MIT",
   "scripts": {
     "install:all": "npm --prefix backend install && npm --prefix frontend install",
-    "infra:up": "docker compose up -d redis && npx -y supabase@2.117.0 start -x studio,edge-runtime,logflare,vector,realtime,imgproxy,supavisor,postgres-meta,mailpit",
-    "infra:down": "npx -y supabase@2.117.0 stop && docker compose down",
     "db:migrate": "npm --prefix backend run db:migrate",
-    "dev": "concurrently -n api,worker,web -c cyan,magenta,green \"npm --prefix backend run dev:api\" \"npm --prefix backend run dev:worker\" \"npm --prefix frontend run dev\"",
+    "dev": "concurrently -n api,web -c cyan,green \"npm --prefix backend run dev:api\" \"npm --prefix frontend run dev\"",
     "test": "npm --prefix backend test",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",

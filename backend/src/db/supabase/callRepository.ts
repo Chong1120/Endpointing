@@ -234,6 +234,17 @@ export class SupabaseCallRepository implements CallRepository {
     return ((data ?? []) as Record<string, unknown>[]).map(normalizeCall);
   }
 
+  async findByStatus(status: CallRecord['status'], limit: number): Promise<CallRecord[]> {
+    const { data, error } = await this.db
+      .from('calls')
+      .select('*')
+      .eq('status', status)
+      .order('updated_at', { ascending: true })
+      .limit(limit);
+    assertNoError(error, 'finding calls by status');
+    return ((data ?? []) as Record<string, unknown>[]).map(normalizeCall);
+  }
+
   async delete(id: string): Promise<void> {
     const { error } = await this.db.from('calls').delete().eq('id', id);
     assertNoError(error, 'deleting call');

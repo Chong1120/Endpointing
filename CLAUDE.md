@@ -11,6 +11,10 @@ memorized parameter names. (Docs MCP: `claude mcp add assemblyai-docs --transpor
 - Audit metadata carries IDs/counts only (`sanitizeAuditMetadata`). The storage bucket is private; playback is via short-lived signed URLs.
 - Don't claim automated redaction makes anyone HIPAA/PCI compliant.
 
+## Architecture
+Three hosted pieces only: website on Vercel, one API app on Railway, Supabase (Postgres + Auth + Storage). No Redis, no separate worker, no Docker.
+Background work runs inside the API process (`backend/src/queue/backgroundQueue.ts`); the database is the source of truth and `sweepCalls` resumes interrupted calls, so run a single API instance.
+
 ## Layout
 - `backend/src/pipeline/` — intake (upload → AssemblyAI) and `processCall` (webhook-triggered, idempotent, resumable stages)
 - `backend/src/services/assemblyai/` — request builder, safe-transcript conversion, verified PII policy names

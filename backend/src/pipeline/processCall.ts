@@ -48,7 +48,7 @@ export function friendlyTranscriptionError(error: string): string {
  * fetch redacted audio → private storage → AI analysis on the SAFE transcript
  * → delete data at AssemblyAI → mark archive COMPLETED.
  *
- * Every stage is idempotent, so BullMQ retries and duplicate webhooks resume
+ * Every stage is idempotent, so automatic retries and duplicate webhooks resume
  * where the previous attempt stopped instead of redoing (or duplicating) work.
  */
 export async function processCall(deps: PipelineDeps, job: ProcessCallJob, attempt: AttemptInfo): Promise<ProcessOutcome> {

@@ -12,20 +12,19 @@ import {
 import type { AppDeps } from './http/appDeps.js';
 import { createLogger } from './logger.js';
 import { SupabaseAuthVerifier } from './middleware/auth.js';
-import { BullJobQueue, createQueue, createRedisConnection } from './queue/bullQueue.js';
+import { BackgroundJobQueue } from './queue/backgroundQueue.js';
 import { AssemblyAITranscriptionService } from './services/assemblyai/transcription.js';
 import { RepositoryAuditLogger } from './services/audit.js';
 import { LlmGatewayAnalysisService } from './services/llm/analysis.js';
 import { FileSampleCatalog } from './services/samples.js';
 import { SupabaseSafeAudioStorage } from './services/storage/safeAudioStorage.js';
 
-/** Wires production implementations. Shared by the API and the worker. */
-export function buildRuntime(config: AppConfig, serviceName: string) {
+/** Wires the production implementations used by the API server. */
+export function buildRuntime(config: AppConfig, serviceName = 'safecall-api') {
   const logger = createLogger(config.logLevel, serviceName);
   const db = createServiceClient(config.supabase.url, config.supabase.serviceRoleKey);
-  const redis = createRedisConnection(config.redisUrl);
-  const bullQueue = createQueue(redis);
   const auditEvents = new SupabaseAuditRepository(db);
+  const queue = new BackgroundJobQueue(logger);
 
   const deps: AppDeps = {
     config,
@@ -45,20 +44,18 @@ export function buildRuntime(config: AppConfig, serviceName: string) {
       responseFormat: config.llm.responseFormat,
     }),
     storage: new SupabaseSafeAudioStorage(db, config.supabase.audioBucket, config.maxUploadBytes * 4),
-    queue: new BullJobQueue(bullQueue),
+    queue,
     users: new SupabaseUserRepository(db),
     policies: new SupabasePolicyRepository(db),
     authVerifier: new SupabaseAuthVerifier(db),
     samples: new FileSampleCatalog(),
   };
+  queue.attach(deps);
 
   return {
     deps,
-    bullQueue,
-    redis,
     async close() {
-      await bullQueue.close();
-      await redis.quit();
+      await queue.close();
     },
   };
 }

@@ -85,6 +85,8 @@ export interface CallRepository {
   listCompleted(orgId: string, filters: Omit<CallFilters, 'status'>): Promise<CallRecord[]>;
   /** Calls stuck waiting on AssemblyAI (missed webhook), across all organizations. */
   findStuckTranscribing(olderThanIso: string, limit: number): Promise<CallRecord[]>;
+  /** Calls in a given status across all organizations (used to resume interrupted work). */
+  findByStatus(status: CallStatus, limit: number): Promise<CallRecord[]>;
   delete(id: string): Promise<void>;
 }
 

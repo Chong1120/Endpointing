@@ -15,10 +15,6 @@ build/
 *.log
 npm-debug.log*
 
-# Local Supabase CLI state
-supabase/.branches/
-supabase/.temp/
-
 # Temporary upload scratch space (raw audio must never be committed)
 tmp/
 uploads/

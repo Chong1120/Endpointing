@@ -30,8 +30,6 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   SUPABASE_AUDIO_BUCKET: z.string().min(1).default('safe-call-audio'),
 
-  REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
-
   PUBLIC_API_URL: z.union([z.url(), z.literal('')]).optional(),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   MAX_UPLOAD_MB: z.coerce.number().positive().max(1000).default(200),
@@ -61,13 +59,12 @@ export interface AppConfig {
     serviceRoleKey: string;
     audioBucket: string;
   };
-  redisUrl: string;
   /** Public base URL of this API. Required for AssemblyAI webhook delivery. */
   publicApiUrl: string | null;
   /**
    * True when AssemblyAI can reach us over HTTPS. Otherwise (local dev without
-   * a tunnel) the worker falls back to checking transcript status on a delayed
-   * queue job instead of receiving a webhook.
+   * a tunnel) the API falls back to checking transcript status on a timer
+   * instead of receiving a webhook.
    */
   webhooksEnabled: boolean;
   corsOrigins: string[];
@@ -119,7 +116,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       serviceRoleKey: e.SUPABASE_SERVICE_ROLE_KEY,
       audioBucket: e.SUPABASE_AUDIO_BUCKET,
     },
-    redisUrl: e.REDIS_URL,
     publicApiUrl,
     webhooksEnabled: isPublicHttpsUrl(publicApiUrl),
     corsOrigins: e.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),

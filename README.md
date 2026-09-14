@@ -39,22 +39,30 @@ RAW CALL  →  PROTECTED BY ASSEMBLYAI  →  SAFE CALL  →  AI ANALYSIS
 
 ## Architecture
 
+Three hosted pieces, each with one job:
+
+| Piece | Hosted on | Job |
+| --- | --- | --- |
+| **Website** (React) | Vercel | The dashboard people sign in to |
+| **API** (one Node.js app) | Railway | Everything server-side: sign-in checks, uploads, AssemblyAI calls and its webhook, background processing, search, export |
+| **Database, logins, file storage** | Supabase | The safe archive, user accounts, and the private bucket for redacted audio |
+
+Plus the AssemblyAI cloud services (speech-to-text + PII redaction, and the LLM Gateway).
+
 ```mermaid
 flowchart LR
-  U[User] -->|HTTPS| FE[React · Vite · MUI<br/>Vercel]
-  FE -->|Supabase Auth JWT| API[Node.js · Express API<br/>Railway]
-  API -->|enqueue| Q[(Redis · BullMQ)]
-  Q --> W[Worker<br/>Railway]
-  API --> DB[(Supabase Postgres<br/>+ Auth)]
-  W --> DB
-  W --> ST[(Supabase Storage<br/>private bucket)]
-  API -->|upload + submit| AAI[AssemblyAI<br/>pre-recorded STT + PII redaction]
-  AAI -->|webhook| API
-  W -->|redacted transcript + audio| AAI
-  W -->|redacted transcript only| LLM[AssemblyAI LLM Gateway]
+  U[Browser] --> FE[Website<br/>Vercel]
+  U -->|API calls + uploads| API[SafeCall API<br/>Railway · one Node.js app]
+  FE -. sign-in .-> SB
+  API -->|upload, transcribe, redact| AAI[AssemblyAI]
+  AAI -->|webhook when done| API
+  API -->|redacted transcript only| LLM[AssemblyAI LLM Gateway]
+  API --> SB[(Supabase<br/>Postgres · Auth · Storage)]
 ```
 
-Detailed data flow, idempotency and the privacy boundary are in [docs/architecture.md](docs/architecture.md).
+**Why the API isn't on Vercel.** Call recordings are bigger than Vercel functions accept (4.5 MB per request), and each call keeps processing for minutes after the upload. Railway runs an ordinary always-on server, which suits both.
+
+**No Redis, no separate worker, no Docker.** Background work runs inside the API process. The database is the source of truth, so a restart simply resumes unfinished calls. The details, data flow and idempotency rules are in [docs/architecture.md](docs/architecture.md).
 
 ```
 safecall/
@@ -64,28 +72,24 @@ safecall/
 │   │   ├── routes/      REST API + /webhooks/assemblyai
 │   │   ├── middleware/  auth, upload, errors
 │   │   ├── services/    assemblyai/ · llm/ · storage/ · audit · pii · analytics · export
-│   │   ├── pipeline/    intake (upload → AssemblyAI) and processCall (post-webhook)
-│   │   ├── workers/     BullMQ worker entrypoint
+│   │   ├── pipeline/    intake (upload → AssemblyAI), processCall (after the webhook), sweep
+│   │   ├── queue/       in-process background runner (retries, dedupe)
 │   │   ├── db/          repository interfaces + Supabase implementations
 │   │   └── app.ts       Express app factory
 │   ├── samples/         synthetic demo recordings + generator script
 │   └── tests/           Vitest suite (AssemblyAI mocked)
 ├── database/migrations/ SQL schema
-├── docs/                architecture + screenshots
-├── supabase/config.toml local Supabase CLI stack
-└── docker-compose.yml   local Redis
+└── docs/                architecture + screenshots
 ```
 
 ## Technology stack
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | React 19, Vite 8, Material UI 9, React Router 7, TypeScript |
-| API & worker | Node.js 22, Express 5, TypeScript, Multer, zod, pino |
+| Website | React 19, Vite 8, Material UI 9, React Router 7, TypeScript — hosted on Vercel |
+| API | Node.js 22, Express 5, TypeScript, Multer, zod, pino — hosted on Railway |
 | Voice AI | Official `assemblyai` Node SDK 4.41 (pre-recorded STT, PII redaction, redacted audio) + LLM Gateway |
-| Queue | Redis + BullMQ 6 |
-| Database / Auth / Storage | Supabase Postgres (full-text search), Supabase Auth, Supabase Storage (private bucket) |
-| Hosting | Vercel (frontend), Railway (API, worker, Redis), Supabase |
+| Database / logins / storage | Supabase Postgres (full-text search), Supabase Auth, Supabase Storage (private bucket) |
 | Tests | Vitest + Supertest |
 
 ## AssemblyAI integration
@@ -109,7 +113,7 @@ All parameters were checked against the live docs ([agent instructions](https://
 | `redact_pii_return_unredacted` | **never set** | The unredacted transcript is never requested |
 
 - **Upload.** `client.files.upload(tempPath)` sends the file, then the temp file is deleted.
-- **Webhook.** The handler authenticates the header, enqueues a BullMQ job and returns 200 at once. The worker fetches the transcript with `client.transcripts.get`, the redacted audio with `client.transcripts.redactedAudio` (the URL is valid for 24 h, so it is copied into private storage straight away), and finally calls `client.transcripts.delete`.
+- **Webhook.** The handler authenticates the header, schedules the work and returns 200 at once. The API then fetches the transcript with `client.transcripts.get`, the redacted audio with `client.transcripts.redactedAudio` (the URL is valid for 24 h, so it is copied into private storage straight away), and finally calls `client.transcripts.delete`.
 - **LLM Gateway.** Calls `https://llm-gateway.assemblyai.com/v1/chat/completions` with the prompt rules from the spec, `post_processing_steps: json-repair`, and zod validation.
   - Models that support `response_format` get a strict JSON Schema.
   - Models without it get the same schema in the prompt. `LLM_RESPONSE_FORMAT=auto` checks the gateway's `/v1/models`.
@@ -118,12 +122,12 @@ All parameters were checked against the live docs ([agent instructions](https://
 ## Security model
 
 - **Raw audio is transient.** Multer streams uploads to the OS temp directory. The file is deleted immediately after it reaches AssemblyAI (`RAW_UPLOAD_DELETED`), and a periodic purge removes anything left by a crash.
-- **Only redacted data is archived.** The worker refuses transcripts without `redact_pii`, copies only safe fields, and never reads `unredacted_*`.
+- **Only redacted data is archived.** The API refuses transcripts without `redact_pii`, copies only safe fields, and never reads `unredacted_*`.
 - **The LLM sees redacted text only.** `analyze()` accepts a branded `SafeText` type, so raw text can't be passed by accident. Its input is rebuilt from the archived redacted utterances.
 - **Tenant isolation.**
   - Every API query is scoped to the caller's organization from the Supabase JWT.
-  - Tables have RLS enabled with no policies for the `anon` and `authenticated` roles, so the browser can't read them directly.
-  - The service-role key exists only on the server.
+  - Tables have RLS enabled with no policies for the browser roles, so the browser can't read them directly.
+  - The Supabase secret key exists only on the API.
 - **Private storage.** The `safe-call-audio` bucket is private (the API forces it private at startup). Playback uses 5-minute signed URLs, and every issuance is audited (`SAFE_AUDIO_ACCESSED`).
 - **Webhooks** are authenticated with a shared header secret (constant-time comparison) and deduplicated per call.
 - **Audit metadata is sanitized.** Content-bearing keys are dropped, so audit entries hold IDs, stages and counts only.
@@ -133,32 +137,25 @@ All parameters were checked against the live docs ([agent instructions](https://
 
 ## Local setup
 
-Prerequisites: **Node.js 20.11+** (tested on 22), **Docker Desktop**, and an **AssemblyAI API key**.
+Prerequisites: **Node.js 20.11+** (tested on 22), a **Supabase project** (the free plan is fine) and an **AssemblyAI API key**. No Docker is needed. Local development uses your real Supabase project.
 
-```bash
-git clone <this repo> safecall && cd safecall
-npm install && npm run install:all          # root tools + backend + frontend
+```powershell
+git clone https://github.com/Chong1120/Endpointing.git safecall
+cd safecall
+npm install; npm run install:all           # root tools + backend + frontend
 
-# 1. Infrastructure: Redis (docker compose) + local Supabase (Postgres, Auth, Storage)
-npm run infra:up                            # prints the local Supabase URL and keys
+Copy-Item backend\.env.example backend\.env     # AssemblyAI key, webhook secret, Supabase URL + secret key
+Copy-Item frontend\.env.example frontend\.env   # Supabase URL + publishable key
 
-# 2. Configuration
-cp backend/.env.example backend/.env        # fill ASSEMBLYAI_API_KEY, ASSEMBLYAI_WEBHOOK_SECRET,
-                                            # SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
-cp frontend/.env.example frontend/.env      # fill VITE_SUPABASE_ANON_KEY
-
-# 3. Database schema + private storage bucket
-npm run db:migrate
-
-# 4. API (http://localhost:4000), worker and web app (http://localhost:5173)
-npm run dev
+npm run db:migrate    # needs DATABASE_URL in backend/.env (Supabase → Connect → Session pooler)
+npm run dev           # API on http://localhost:4000, website on http://localhost:5173
 ```
 
-Generate the webhook secret with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. `npx supabase status` shows the local keys again.
+Generate the webhook secret with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 
-**Webhooks in local development.** AssemblyAI must be able to reach the API over HTTPS. Without a public URL, the worker uses a status-check fallback (delayed queue jobs), so everything still works. To test the real webhook path, run a tunnel and restart the API:
+**Webhooks in local development.** AssemblyAI must be able to reach the API over HTTPS. Without a public URL, the API checks each transcript's status on a timer instead, so everything still works. To test the real webhook path, run a tunnel and restart the API:
 
-```bash
+```powershell
 npx cloudflared tunnel --url http://localhost:4000   # prints https://<random>.trycloudflare.com
 # backend/.env → PUBLIC_API_URL=https://<random>.trycloudflare.com
 ```
@@ -171,20 +168,18 @@ See [.env.example](.env.example) for the annotated list.
 
 | Variable | Where | Purpose |
 | --- | --- | --- |
-| `ASSEMBLYAI_API_KEY` | API + worker | AssemblyAI key (server-side only) |
+| `ASSEMBLYAI_API_KEY` | API | AssemblyAI key (server-side only) |
 | `ASSEMBLYAI_WEBHOOK_SECRET` | API | Shared secret echoed in `X-SafeCall-Webhook-Secret` |
-| `ASSEMBLYAI_DELETE_AFTER_ARCHIVE` | Worker | Delete the transcript at AssemblyAI after archiving (default `true`) |
-| `REDACTED_AUDIO_FORMAT` | API + worker | `mp3` (default) or `wav` |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | API + worker | Server-side Supabase access |
-| `SUPABASE_ANON_KEY` | Frontend (`VITE_SUPABASE_ANON_KEY`) | Browser auth only |
-| `SUPABASE_AUDIO_BUCKET` | API + worker | Private bucket name (default `safe-call-audio`) |
-| `DATABASE_URL` | Migrations only | Postgres connection string |
-| `REDIS_URL` | API + worker | BullMQ connection |
+| `ASSEMBLYAI_DELETE_AFTER_ARCHIVE` | API | Delete the transcript at AssemblyAI after archiving (default `true`) |
+| `REDACTED_AUDIO_FORMAT` | API | `mp3` (default) or `wav` |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | API | Project URL and the Supabase **secret** key (`sb_secret_…`, or the legacy `service_role` key) |
+| `SUPABASE_AUDIO_BUCKET` | API | Private bucket name (default `safe-call-audio`) |
+| `DATABASE_URL` | Your laptop, migrations only | Postgres connection string (Session pooler) |
 | `PUBLIC_API_URL` | API | Public HTTPS base URL used for the AssemblyAI webhook |
-| `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `LLM_RESPONSE_FORMAT` | Worker | LLM Gateway model settings |
+| `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `LLM_RESPONSE_FORMAT` | API | LLM Gateway model settings |
 | `CORS_ORIGINS` | API | Allowed browser origins (wildcards such as `https://*.vercel.app` are supported) |
 | `MAX_UPLOAD_MB`, `SIGNED_URL_TTL_SECONDS` | API | Upload limit (default 200 MB), signed URL lifetime (default 300 s) |
-| `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Frontend | Public build-time values |
+| `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Website | Public build-time values; the last one is the Supabase **publishable** key |
 
 ## Database setup
 
@@ -197,38 +192,49 @@ Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql).
 - **Setup helper:** `ensure_user_profile()` creates an organization and profile on first sign-in.
 - **Storage:** the private `safe-call-audio` bucket.
 
-```bash
-DATABASE_URL=postgresql://... npm run db:migrate    # tracks applied files in schema_migrations
+```powershell
+$env:DATABASE_URL = "postgresql://postgres.<ref>:<password>@<pooler-host>:5432/postgres"
+npm run db:migrate    # tracks applied files in schema_migrations
+Remove-Item Env:DATABASE_URL
 ```
 
-Hosted Supabase: use the **Session pooler** connection string from *Project Settings → Database*, or paste the SQL file into the SQL editor.
+Copy the **Session pooler** string from **Connect** in the Supabase dashboard and percent-encode any symbols in the password. Alternatively, paste the SQL file into the SQL editor.
 
 ## Deployment
 
-**Supabase**
-1. Create a project, then run the migration (see above).
-2. In *Authentication → Providers → Email*, either disable "Confirm email" for a demo or configure SMTP.
-3. In *Authentication → URL configuration*, set the Site URL to your Vercel URL.
-4. Copy the project URL, the anon key and the service-role key.
+**1. Supabase.**
+1. Run the migration (see above).
+2. In *Authentication → Sign In / Providers → Email*, turn off "Confirm email" for a demo, or configure SMTP.
+3. Copy the Project URL, the publishable key and the secret key.
 
-**Railway (API, worker, Redis)**
-1. Create a project from this GitHub repo and add a **Redis** database.
-2. **API service:** root directory `/backend`, Railway Config File `/backend/railway.json`, watch paths `/backend/**`. The config file path is absolute; it does not follow the root directory.
-   - Build with `npm ci --include=dev && npm run build`, start with `npm run start:api`; the health check is `/health`. `--include=dev` keeps the TypeScript compiler available when `NODE_ENV=production` is set.
-   - Set the backend variables, with `REDIS_URL=${{Redis.REDIS_URL}}`.
-   - Generate a domain and set `PUBLIC_API_URL=https://<api-domain>`.
-3. **Worker service:** same repo, root directory `/backend`, config file `/backend/railway.worker.json` (start with `npm run start:worker`), watch paths `/backend/**`. It uses the same variables; `PUBLIC_API_URL` is not needed.
-4. Set `CORS_ORIGINS=https://<your-app>.vercel.app,https://*.vercel.app`.
+**2. Railway (the API): one service, nothing else.**
+1. Create a project from this GitHub repo.
+2. In the service settings, set **Root Directory** to `/backend` and **Railway Config File** to `/backend/railway.json`. The config file path is absolute; it does not follow the root directory. The file sets the build (`npm ci --include=dev && npm run build`), the start command (`npm run start:api`), the `/health` check and the watch paths.
+3. **Variables:**
+   ```
+   NODE_ENV=production
+   ASSEMBLYAI_API_KEY=…
+   ASSEMBLYAI_WEBHOOK_SECRET=…
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<Supabase secret key>
+   LLM_MODEL=qwen3.5-4b-32k-fast
+   CORS_ORIGINS=https://<your-app>.vercel.app
+   PUBLIC_API_URL=https://<api-domain>
+   ```
+4. Use **Networking → Generate Domain** to get the API address, and put it in `PUBLIC_API_URL`.
+5. Keep it at **one instance**, because background work runs inside this process.
 
-**Vercel (frontend)**
+**3. Vercel (the website).**
 1. Import the repo with root directory `frontend`. The framework is detected as Vite, and `vercel.json` handles SPA rewrites and security headers.
-2. Set `VITE_API_URL=https://<api-domain>`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+2. Set `VITE_API_URL=https://<api-domain>`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the publishable key).
 
-Uploads go straight from the browser to the Railway API. They never pass through Vercel functions, which have body-size limits.
+**4. Wire it together.**
+1. On Railway, set `CORS_ORIGINS` to the Vercel address.
+2. In Supabase, go to *Authentication → URL Configuration* and set the Site URL to the Vercel address.
+
+Uploads go straight from the browser to the Railway API. They never pass through Vercel functions, which cap request bodies at 4.5 MB.
 
 **AssemblyAI account settings (recommended).** Opt out of the model-improvement program. Set a short time-to-live on the *Data Controls* page as a backstop to SafeCall's own deletion.
-
-Optional custom domains: `app.safecall.example` (Vercel) and `api.safecall.example` (Railway).
 
 ## Demo
 
@@ -262,7 +268,7 @@ All sample data is synthetic: 555-01xx phone numbers, `example.com` emails, and 
 | ![Analytics](docs/screenshots/07-analytics.png) Analytics | ![Policies](docs/screenshots/08-policies.png) Policies |
 | ![Audit](docs/screenshots/09-audit.png) Audit trail | |
 
-To regenerate them against a running instance: `cd frontend && SAFECALL_EMAIL=… SAFECALL_PASSWORD=… node scripts/screenshots.mjs` (uses the installed Microsoft Edge).
+To regenerate them against a running instance: `cd frontend; $env:SAFECALL_EMAIL="…"; $env:SAFECALL_PASSWORD="…"; node scripts/screenshots.mjs` (uses the installed Microsoft Edge).
 
 ## API endpoints
 
@@ -289,8 +295,8 @@ All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and 
 
 ## Tests
 
-```bash
-npm test            # Vitest: 85 tests, AssemblyAI + LLM Gateway mocked
+```powershell
+npm test            # Vitest: AssemblyAI + LLM Gateway mocked
 npm run typecheck   # backend + frontend
 ```
 
@@ -300,31 +306,35 @@ Coverage includes:
 - PII counting (including grouping of word-level markers);
 - webhook authentication and duplicate deliveries;
 - failed and successful AssemblyAI processing, and resumable retry;
+- the in-process background runner: dedupe, backoff, retry budget, and resuming after a restart;
 - storage paths and signed URLs;
 - LLM request shape and AI JSON validation;
 - audit sanitization, analytics and the export formats;
-- an end-to-end test: upload → AssemblyAI job → webhook → worker → safe archive.
+- an end-to-end test: upload → AssemblyAI job → webhook → background processing → safe archive.
 
-### Verified against real services (2026-09-14)
+### Verified against real services
 
-Six synthetic calls ran through the real stack: AssemblyAI Universal-3.5 Pro, LLM Gateway, local Supabase, Redis/BullMQ.
+The pipeline was run end to end against real AssemblyAI (Universal-3.5 Pro), the LLM Gateway and Supabase with six synthetic calls:
 
-- **Webhooks.** AssemblyAI delivered completion webhooks through a Cloudflare quick tunnel, each recorded as `WEBHOOK_RECEIVED`. The status-check fallback was also used when no tunnel was running.
+- **Webhooks.** AssemblyAI delivered completion webhooks through a Cloudflare quick tunnel, each recorded as `WEBHOOK_RECEIVED`. The status-check fallback handled runs without a tunnel.
 - **Redaction.** Names, phone numbers, emails, addresses, card numbers, expiry dates, dates of birth and account numbers were redacted in both the transcript and the audio (silence). The no-PII call had zero redactions. The one miss, a spoken CVV, is listed under Limitations.
 - **Resumable retry.** Real LLM Gateway failures (a 400 for model access, a 429 rate limit) marked calls `FAILED` at the AI stage. Retry then completed them without transcribing again.
 - **Upload path.** A multipart upload through `POST /api/calls` left the temp directory empty after intake. The transcript was deleted at AssemblyAI once the archive was complete.
-- **Delete.** Deleting a call removed its safe audio and returned 404 afterwards. The deletion stays in the audit log.
+- **Current design** (2026-09-15, after removing Redis and the separate worker):
+  - The API ran with a new-style Supabase secret key (`sb_secret_…`), and sign-in used a publishable key (`sb_publishable_…`).
+  - A call left mid-pipeline by a simulated crash was resumed automatically when the API started.
+  - A fresh call completed end to end through in-process background processing.
 
 ## Limitations
 
 - **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123". That applied to both the transcript and the audio, and adding `number_sequence` didn't catch it either. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
 - **PII counts are derived from redaction labels.** AssemblyAI redacts word by word, so SafeCall groups adjacent same-type labels into one entity. Two same-type entities separated only by a comma may be counted as one.
 - **LLM model access depends on your AssemblyAI account.** On the account used for development, only `qwen3.5-4b-32k-fast` was accessible; Claude, GPT and Gemini returned "no access". SafeCall supports both strict-schema and prompt-schema modes, so any accessible model works. Set `LLM_MODEL` accordingly.
+- **Single API instance.** Background work runs inside the API process, and the database lets it resume after restarts. Running several instances would need a shared queue again.
 - **Original filenames are stored as metadata.** Avoid putting personal data in filenames.
 - **One organization per sign-up.** There are no invitations or SSO yet. Roles exist in the schema, but the UI only uses `admin`.
 - **Failed uploads can't be retried without the file.** If transcription fails before the archive exists, the raw file is gone by design, so the user uploads again.
 - **Tested mostly on English.** The synthetic calls use English Windows text-to-speech voices.
-- **Local development without a tunnel** uses the status-check fallback instead of webhooks.
 
 ## Roadmap
 
@@ -332,9 +342,9 @@ Six synthetic calls ran through the real stack: AssemblyAI Universal-3.5 Pro, LL
 - Per-organization retention policies and automatic archive expiry
 - Team invitations, SSO and role-based permissions in the UI
 - Human review queue for low-confidence or high-risk calls
+- A shared job queue for running several API instances
 - Streaming redaction for live calls (AssemblyAI streaming PII redaction)
 - Custom entity lists via `redact_static_entities` (product names, internal codes)
-- QA scorecards and coaching dashboards built on the safe dataset
 
 ## License
 

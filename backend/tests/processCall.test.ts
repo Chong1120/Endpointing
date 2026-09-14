@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuthContext } from '../src/domain/types.js';
 import { processCall } from '../src/pipeline/processCall.js';
-import { pollTranscript, sweepStuckCalls } from '../src/pipeline/statusChecks.js';
+import { pollTranscript, sweepCalls } from '../src/pipeline/statusChecks.js';
 import { toSafeTranscript } from '../src/services/assemblyai/transcription.js';
 import { buildTestDeps } from './support/fakes.js';
 import { EXPECTED_PII_COUNTS, RAW_PII_VALUES, redactedTranscriptFixture, transcriptWithUnredactedFields } from './support/fixtures.js';
@@ -154,7 +154,7 @@ describe('failed AssemblyAI processing', () => {
     const seeded = await seedTranscribingCall(ctx);
     const job = { callId: seeded.id, transcriptId: 'transcript-1', trigger: 'webhook' as const };
 
-    // Non-final attempt: throws so BullMQ retries; call stays PROCESSING.
+    // Non-final attempt: throws so the background queue retries; call stays PROCESSING.
     await expect(processCall(ctx.deps, job, ATTEMPT_1)).rejects.toThrow(/AI analysis/);
     expect(ctx.calls.calls.get(seeded.id)?.status).toBe('PROCESSING');
     expect(ctx.calls.calls.get(seeded.id)?.safe_audio_path).not.toBeNull();
@@ -210,7 +210,17 @@ describe('status-check fallback and sweeper', () => {
     await ctx.calls.update(seeded.id, { submitted_at: new Date(Date.now() - 30 * 60_000).toISOString() });
     ctx.transcription.results.set('transcript-1', { status: 'completed', transcript: toSafeTranscript(redactedTranscriptFixture()) });
 
-    expect(await sweepStuckCalls(ctx.deps)).toEqual({ checked: 1, requeued: 1, failed: 0 });
+    expect(await sweepCalls(ctx.deps)).toEqual({ checked: 1, requeued: 1, resumed: 0, failed: 0 });
     expect(ctx.queue.processJobs[0]?.trigger).toBe('sweeper');
+  });
+
+  it('resumes calls a restart left mid-pipeline, once', async () => {
+    const ctx = buildTestDeps();
+    const seeded = await seedTranscribingCall(ctx);
+    await ctx.calls.update(seeded.id, { status: 'PROCESSING' });
+
+    expect(await sweepCalls(ctx.deps)).toEqual({ checked: 0, requeued: 0, resumed: 1, failed: 0 });
+    expect(ctx.queue.processJobs).toEqual([{ callId: seeded.id, transcriptId: 'transcript-1', trigger: 'sweeper' }]);
+    expect((await sweepCalls(ctx.deps)).resumed).toBe(0);
   });
 });

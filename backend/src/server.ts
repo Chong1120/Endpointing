@@ -1,10 +1,14 @@
 import { mkdir } from 'node:fs/promises';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { describeError } from './pipeline/failures.js';
+import { sweepCalls } from './pipeline/statusChecks.js';
 import { buildRuntime, purgeStaleUploads } from './runtime.js';
 
+const SWEEP_EVERY_MS = 2 * 60_000;
+
 const config = loadConfig();
-const runtime = buildRuntime(config, 'safecall-api');
+const runtime = buildRuntime(config);
 const { deps } = runtime;
 const { logger } = deps;
 
@@ -16,7 +20,7 @@ purgeTimer.unref();
 try {
   await deps.storage.ensureBucket();
 } catch (error) {
-  logger.error({ err: error instanceof Error ? error.message : String(error) }, 'safe audio bucket check failed');
+  logger.error({ err: describeError(error) }, 'safe audio bucket check failed');
 }
 
 const server = createApp(deps).listen(config.port, () => {
@@ -29,8 +33,22 @@ const server = createApp(deps).listen(config.port, () => {
   );
 });
 
+// Safety net: resume calls a restart interrupted and catch missed webhooks.
+async function sweep() {
+  try {
+    const result = await sweepCalls(deps);
+    if (result.requeued || result.resumed || result.failed) logger.info(result, 'resumed pending calls');
+  } catch (error) {
+    logger.warn({ err: describeError(error) }, 'sweep failed');
+  }
+}
+void sweep();
+const sweepTimer = setInterval(() => void sweep(), SWEEP_EVERY_MS);
+sweepTimer.unref();
+
 async function shutdown(signal: string) {
   logger.info({ signal }, 'shutting down API');
+  clearInterval(sweepTimer);
   server.close();
   await runtime.close().catch(() => undefined);
   process.exit(0);

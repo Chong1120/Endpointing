@@ -47,7 +47,6 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     },
     llm: { gatewayUrl: 'https://llm.test/v1/chat/completions', model: 'claude-sonnet-4-6', fallbackModel: null, responseFormat: 'json_schema' },
     supabase: { url: 'http://supabase.test', serviceRoleKey: 'service-role', audioBucket: 'safe-call-audio' },
-    redisUrl: 'redis://localhost:6379',
     publicApiUrl: 'https://api.safecall.test',
     webhooksEnabled: true,
     corsOrigins: ['http://localhost:5173'],
@@ -200,6 +199,10 @@ export class InMemoryCallRepository implements CallRepository {
     return [...this.calls.values()]
       .filter((c) => c.status === 'TRANSCRIBING' && c.submitted_at !== null && c.submitted_at < olderThanIso)
       .slice(0, limit);
+  }
+
+  async findByStatus(status: CallRecord['status'], limit: number) {
+    return [...this.calls.values()].filter((c) => c.status === status).slice(0, limit);
   }
 
   async delete(id: string) {
