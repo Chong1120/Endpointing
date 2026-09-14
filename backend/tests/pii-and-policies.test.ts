@@ -93,6 +93,20 @@ describe('configuration', () => {
     expect(loadConfig({ ...base, PUBLIC_API_URL: '' }).webhooksEnabled).toBe(false);
   });
 
+  it('accepts a public URL pasted without https://, with quotes or a trailing slash', () => {
+    for (const pasted of ['app.up.railway.app', '"https://app.up.railway.app"', ' https://app.up.railway.app/ ']) {
+      const config = loadConfig({ ...base, PUBLIC_API_URL: pasted });
+      expect(config.publicApiUrl).toBe('https://app.up.railway.app');
+      expect(config.webhooksEnabled).toBe(true);
+    }
+  });
+
+  it('falls back to status checks instead of crashing on an unusable public URL', () => {
+    const config = loadConfig({ ...base, PUBLIC_API_URL: 'https://' });
+    expect(config.publicApiUrl).toBeNull();
+    expect(config.webhooksEnabled).toBe(false);
+  });
+
   it('rejects missing secrets with a readable message', () => {
     expect(() => loadConfig({ SUPABASE_URL: 'http://x.test' })).toThrow(/ASSEMBLYAI_API_KEY/);
   });

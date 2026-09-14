@@ -30,7 +30,8 @@ const EnvSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   SUPABASE_AUDIO_BUCKET: z.string().min(1).default('safe-call-audio'),
 
-  PUBLIC_API_URL: z.union([z.url(), z.literal('')]).optional(),
+  // Normalised by normalizePublicUrl: Railway shows its domain without "https://".
+  PUBLIC_API_URL: z.string().optional(),
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   MAX_UPLOAD_MB: z.coerce.number().positive().max(1000).default(200),
   SIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
@@ -85,6 +86,23 @@ export function isPublicHttpsUrl(value: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Accepts the forms people paste from a hosting dashboard: a bare host
+ * ("app.up.railway.app"), surrounding quotes or a trailing slash. An unusable
+ * value returns null, so the API still starts and falls back to status checks
+ * (visible in the startup log and on /health) instead of crash-looping.
+ */
+export function normalizePublicUrl(value: string | undefined): string | null {
+  const trimmed = (value ?? '').trim().replace(/^["']+|["']+$/g, '').trim();
+  if (!trimmed) return null;
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(candidate).hostname ? candidate.replace(/\/+$/, '') : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = EnvSchema.safeParse(env);
   if (!parsed.success) {
@@ -92,7 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error(`Invalid SafeCall configuration:\n${problems}`);
   }
   const e = parsed.data;
-  const publicApiUrl = e.PUBLIC_API_URL ? e.PUBLIC_API_URL.replace(/\/+$/, '') : null;
+  const publicApiUrl = normalizePublicUrl(e.PUBLIC_API_URL);
 
   return {
     env: e.NODE_ENV,
