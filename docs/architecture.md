@@ -103,9 +103,12 @@ Everything left of the AssemblyAI step is transient. After it, only redacted art
 LLM Gateway `POST /v1/chat/completions`, authenticated with the raw API key. The system prompt requires analyzing only the redacted transcript, never reconstructing redacted information, and never inventing facts.
 
 - Models that support `response_format` get a strict JSON Schema.
-- Models that don't (for example `qwen3.5-4b-32k-fast`) get the same schema in the prompt.
+- Models that don't (for example `qwen3.5-4b-32k-fast` and `claude-opus-5`) get the same schema in the prompt.
+- `temperature` is only sent to models that accept it.
 
 `LLM_RESPONSE_FORMAT=auto` checks `GET /v1/models`. Output is repaired server-side (`json-repair`) and validated with zod.
+
+Model choice: `LLM_MODEL` (default `claude-opus-5`) is tried first. If the gateway refuses it for this account (a 4xx such as "does not have access to this LLM Gateway model"), `LLM_FALLBACK_MODEL` (default `qwen3.5-4b-32k-fast`) answers and `LLM_MODEL` is tried again an hour later. The gateway's own `fallbacks` parameter is still sent, but it only covers failures of a model the account can use.
 
 ## Search
 

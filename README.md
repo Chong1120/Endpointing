@@ -217,7 +217,8 @@ Copy the **Session pooler** string from **Connect** in the Supabase dashboard an
    ASSEMBLYAI_WEBHOOK_SECRET=…
    SUPABASE_URL=https://<ref>.supabase.co
    SUPABASE_SERVICE_ROLE_KEY=<Supabase secret key>
-   LLM_MODEL=qwen3.5-4b-32k-fast
+   LLM_MODEL=claude-opus-5
+   LLM_FALLBACK_MODEL=qwen3.5-4b-32k-fast
    CORS_ORIGINS=https://<your-app>.vercel.app
    PUBLIC_API_URL=https://<api-domain>
    ```
@@ -329,7 +330,7 @@ The pipeline was run end to end against real AssemblyAI (Universal-3.5 Pro), the
 
 - **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123". That applied to both the transcript and the audio, and adding `number_sequence` didn't catch it either. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
 - **PII counts are derived from redaction labels.** AssemblyAI redacts word by word, so SafeCall groups adjacent same-type labels into one entity. Two same-type entities separated only by a comma may be counted as one.
-- **LLM model access depends on your AssemblyAI account.** On the account used for development, only `qwen3.5-4b-32k-fast` was accessible; Claude, GPT and Gemini returned "no access". SafeCall supports both strict-schema and prompt-schema modes, so any accessible model works. Set `LLM_MODEL` accordingly.
+- **LLM model access depends on your AssemblyAI account.** LLM Gateway isn't covered by AssemblyAI's free credits, and on the account used for development only `qwen3.5-4b-32k-fast` was accessible; Claude, GPT and Gemini returned "no access". SafeCall asks for `LLM_MODEL` (default `claude-opus-5`) first. While the account can't use it, `LLM_FALLBACK_MODEL` (default `qwen3.5-4b-32k-fast`) answers and the first model is tried again every hour, so enabling billing upgrades the analysis without a redeploy. The model that produced each analysis is stored with it and in the call's audit trail.
 - **Single API instance.** Background work runs inside the API process, and the database lets it resume after restarts. Running several instances would need a shared queue again.
 - **Original filenames are stored as metadata.** Avoid putting personal data in filenames.
 - **One organization per sign-up.** There are no invitations or SSO yet. Roles exist in the schema, but the UI only uses `admin`.

@@ -42,6 +42,8 @@ export function buildRuntime(config: AppConfig, serviceName = 'safecall-api') {
       model: config.llm.model,
       fallbackModel: config.llm.fallbackModel,
       responseFormat: config.llm.responseFormat,
+      onModelUnavailable: (model, fallbackModel, reason) =>
+        logger.warn({ model, fallbackModel, reason }, 'LLM model not available to this account; using the fallback model for the next hour'),
     }),
     storage: new SupabaseSafeAudioStorage(db, config.supabase.audioBucket, config.maxUploadBytes * 4),
     queue,

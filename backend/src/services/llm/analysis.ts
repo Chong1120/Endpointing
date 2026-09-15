@@ -11,8 +11,15 @@ import { httpStatusOf, isTransientError } from '../../errors.js';
  * - `json_schema`: `response_format` with a strict JSON Schema, for models whose
  *   `supported_parameters` include `response_format`.
  * - `prompt`: the same schema is given in the system prompt, for models without
- *   `response_format` (e.g. qwen3.5-4b-32k-fast).
+ *   `response_format` (e.g. qwen3.5-4b-32k-fast, claude-opus-5).
  * Both modes use server-side `json-repair` and strict validation here.
+ *
+ * Model choice: the configured model is tried first. If the account can't use
+ * it (the gateway answers with a 4xx such as "does not have access to this LLM
+ * Gateway model"), the fallback model serves the call and the first model is
+ * tried again an hour later, so enabling a better model on the AssemblyAI
+ * account takes effect without a code or config change. The gateway's own
+ * `fallbacks` parameter doesn't cover access errors (verified 2026-09-15).
  */
 
 export const ANALYSIS_SYSTEM_PROMPT = `You are a contact-center quality analyst working inside SafeCall, a privacy-first call archive.
@@ -75,18 +82,41 @@ export const ANALYSIS_JSON_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/** Models the LLM Gateway "Models" table lists without `response_format` (fallback when /v1/models is unreachable). */
+// Capability tables copied from the gateway's /v1/models list (2026-09-15). Used
+// when that list can't be fetched or LLM_RESPONSE_FORMAT is set explicitly.
 const MODELS_WITHOUT_RESPONSE_FORMAT = new Set([
   'qwen3.5-4b-32k-fast',
   'gpt-oss-20b',
   'gpt-4.1',
+  'gpt-6-astra',
   'claude-opus-4-7',
   'claude-opus-4-8',
   'claude-opus-5',
   'claude-sonnet-5',
 ]);
+const MODELS_WITHOUT_TEMPERATURE = new Set([
+  'claude-opus-4-7',
+  'claude-opus-4-8',
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'minimax-m3',
+  'kimi-k3',
+  'gpt-5.5',
+  'gpt-5.6-luna',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-6-astra',
+]);
+
+/** How long a model the account can't use is skipped before it is tried again. */
+export const MODEL_RECHECK_MS = 60 * 60_000;
 
 export type OutputMode = 'json_schema' | 'prompt';
+
+interface ModelCapabilities {
+  mode: OutputMode;
+  temperature: boolean;
+}
 
 // Validation: required fields and types are strict; enum casing/spacing is
 // normalized; unknown keys are stripped so nothing unexpected is ever stored.
@@ -194,10 +224,13 @@ export interface LlmGatewayOptions {
   fallbackModel: string | null;
   /** `auto` asks the gateway's /v1/models endpoint whether the model supports response_format. */
   responseFormat?: 'auto' | OutputMode;
+  /** Called when the account can't use `model`; `fallbackModel` serves calls until the next check. */
+  onModelUnavailable?: (model: string, fallbackModel: string, reason: string) => void;
   timeoutMs?: number;
   maxAttempts?: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
 }
 
 export function buildAnalysisRequest(
@@ -205,6 +238,7 @@ export function buildAnalysisRequest(
   model: string,
   fallbackModel: string | null,
   mode: OutputMode = 'json_schema',
+  supportsTemperature = true,
 ) {
   const system =
     mode === 'json_schema'
@@ -216,14 +250,21 @@ export function buildAnalysisRequest(
       { role: 'system', content: system },
       { role: 'user', content: `Redacted call transcript (speaker-labelled):\n\n${transcript}` },
     ],
-    max_tokens: 1500,
-    temperature: 0.2,
+    // Leaves room for models that reason before answering; only used tokens are billed.
+    max_tokens: 4000,
+    ...(supportsTemperature ? { temperature: 0.2 } : {}),
     ...(mode === 'json_schema'
       ? { response_format: { type: 'json_schema', json_schema: { name: 'call_analysis', schema: ANALYSIS_JSON_SCHEMA, strict: true } } }
       : {}),
     post_processing_steps: [{ type: 'json-repair' }],
     ...(fallbackModel && fallbackModel !== model ? { fallbacks: [{ model: fallbackModel }] } : {}),
   };
+}
+
+/** A 4xx other than auth, timeouts or rate limits: this model can't serve the request for this account. */
+function isModelUnavailable(error: unknown): boolean {
+  const status = httpStatusOf(error);
+  return status !== undefined && status >= 400 && status < 500 && status !== 401 && !isTransientError(error);
 }
 
 interface ChatCompletionResponse {
@@ -236,47 +277,81 @@ interface ChatCompletionResponse {
 export class LlmGatewayAnalysisService implements AnalysisService {
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
-  private modeLookup: Promise<OutputMode> | null = null;
+  private readonly now: () => number;
+  private catalog: Promise<Map<string, string[]> | null> | null = null;
+  private primaryUnavailableUntil = 0;
 
   constructor(private readonly options: LlmGatewayOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.now = options.now ?? Date.now;
   }
 
-  /** Resolves (once per process) whether the configured model supports response_format. */
-  outputMode(): Promise<OutputMode> {
+  /** Whether `model` gets `response_format` or the schema in the prompt. */
+  async outputMode(model = this.options.model): Promise<OutputMode> {
+    return (await this.capabilities(model)).mode;
+  }
+
+  private async capabilities(model: string): Promise<ModelCapabilities> {
     const configured = this.options.responseFormat ?? 'auto';
-    if (configured !== 'auto') return Promise.resolve(configured);
-    this.modeLookup ??= this.lookupOutputMode();
-    return this.modeLookup;
+    const params = configured === 'auto' ? (await this.modelCatalog())?.get(model) : undefined;
+    if (params) {
+      return { mode: params.includes('response_format') ? 'json_schema' : 'prompt', temperature: params.includes('temperature') };
+    }
+    return {
+      mode: configured !== 'auto' ? configured : MODELS_WITHOUT_RESPONSE_FORMAT.has(model) ? 'prompt' : 'json_schema',
+      temperature: !MODELS_WITHOUT_TEMPERATURE.has(model),
+    };
   }
 
-  private async lookupOutputMode(): Promise<OutputMode> {
+  /** The gateway's model list (fetched once per process), or null when it can't be read. */
+  private modelCatalog(): Promise<Map<string, string[]> | null> {
+    this.catalog ??= this.fetchModelCatalog();
+    return this.catalog;
+  }
+
+  private async fetchModelCatalog(): Promise<Map<string, string[]> | null> {
     try {
       const modelsUrl = this.options.gatewayUrl.replace(/\/chat\/completions\/?$/, '/models');
       const response = await this.fetchImpl(modelsUrl, {
         headers: { authorization: this.options.apiKey },
         signal: AbortSignal.timeout(10_000),
       });
-      if (response.ok) {
-        const body = (await response.json()) as { data?: Array<{ id?: string; supported_parameters?: string[] }> };
-        const entry = body.data?.find((model) => model.id === this.options.model);
-        if (entry?.supported_parameters) {
-          return entry.supported_parameters.includes('response_format') ? 'json_schema' : 'prompt';
-        }
+      if (!response.ok) return null;
+      const body = (await response.json()) as { data?: Array<{ id?: string; supported_parameters?: string[] }> };
+      const catalog = new Map<string, string[]>();
+      for (const entry of body.data ?? []) {
+        if (entry.id && Array.isArray(entry.supported_parameters)) catalog.set(entry.id, entry.supported_parameters);
       }
+      return catalog;
     } catch {
-      // Fall back to the documented capability table below.
+      return null; // The capability tables above apply instead.
     }
-    return MODELS_WITHOUT_RESPONSE_FORMAT.has(this.options.model) ? 'prompt' : 'json_schema';
   }
 
   async analyze(transcript: SafeText): Promise<AnalysisResult> {
     if (transcript.trim() === '') {
       throw new AnalysisValidationError('There is no speech in this call to analyze.');
     }
-    const mode = await this.outputMode();
-    const body = JSON.stringify(buildAnalysisRequest(transcript, this.options.model, this.options.fallbackModel, mode));
+    const { model } = this.options;
+    const fallback = this.options.fallbackModel && this.options.fallbackModel !== model ? this.options.fallbackModel : null;
+    if (!fallback) return this.analyzeWith(transcript, model, null);
+
+    if (this.now() >= this.primaryUnavailableUntil) {
+      try {
+        return await this.analyzeWith(transcript, model, fallback);
+      } catch (error) {
+        if (!isModelUnavailable(error)) throw error;
+        this.primaryUnavailableUntil = this.now() + MODEL_RECHECK_MS;
+        this.options.onModelUnavailable?.(model, fallback, error instanceof Error ? error.message : String(error));
+      }
+    }
+    return this.analyzeWith(transcript, fallback, null);
+  }
+
+  private async analyzeWith(transcript: SafeText, model: string, gatewayFallback: string | null): Promise<AnalysisResult> {
+    const { mode, temperature } = await this.capabilities(model);
+    const body = JSON.stringify(buildAnalysisRequest(transcript, model, gatewayFallback, mode, temperature));
     const maxAttempts = this.options.maxAttempts ?? 4;
 
     for (let attempt = 1; ; attempt += 1) {
@@ -301,7 +376,7 @@ export class LlmGatewayAnalysisService implements AnalysisService {
         return {
           analysis,
           meta: {
-            model: data.model ?? this.options.model,
+            model: data.model ?? model,
             requestId: data.request_id ?? null,
             inputTokens: data.usage?.input_tokens ?? data.usage?.prompt_tokens ?? null,
             outputTokens: data.usage?.output_tokens ?? data.usage?.completion_tokens ?? null,

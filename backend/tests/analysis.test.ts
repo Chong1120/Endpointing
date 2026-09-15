@@ -155,4 +155,67 @@ describe('LLM Gateway analysis service', () => {
     await expect(service(fetchImpl).analyze(SAFE)).rejects.toThrow(/HTTP 400.*does not have access/);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it('uses the fallback model while the account cannot use the first, and tries the first again an hour later', async () => {
+    let now = 0;
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) =>
+      JSON.parse(String(init?.body)).model === 'claude-opus-5'
+        ? new Response('{"metadata":{"errors":["Your account does not have access to this LLM Gateway model"]}}', { status: 400 })
+        : gatewayResponse(SAMPLE_ANALYSIS),
+    );
+    const onModelUnavailable = vi.fn();
+    const llm = service(fetchImpl, {
+      model: 'claude-opus-5',
+      fallbackModel: 'qwen3.5-4b-32k-fast',
+      responseFormat: 'prompt',
+      now: () => now,
+      onModelUnavailable,
+    });
+    const bodies = () => fetchImpl.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+
+    await expect(llm.analyze(SAFE)).resolves.toMatchObject({ analysis: SAMPLE_ANALYSIS });
+    expect(bodies().map((body) => body.model)).toEqual(['claude-opus-5', 'qwen3.5-4b-32k-fast']);
+    expect(bodies()[0].fallbacks).toEqual([{ model: 'qwen3.5-4b-32k-fast' }]);
+    expect(bodies()[1]).not.toHaveProperty('fallbacks');
+    expect(onModelUnavailable).toHaveBeenCalledWith('claude-opus-5', 'qwen3.5-4b-32k-fast', expect.stringMatching(/does not have access/));
+
+    await llm.analyze(SAFE);
+    expect(bodies().slice(2).map((body) => body.model)).toEqual(['qwen3.5-4b-32k-fast']); // skipped within the hour
+
+    now += 60 * 60_000;
+    await llm.analyze(SAFE);
+    expect(bodies().slice(3).map((body) => body.model)).toEqual(['claude-opus-5', 'qwen3.5-4b-32k-fast']);
+  });
+
+  it('does not switch models for errors a different model would not fix', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"message":"invalid api key"}', { status: 401 }));
+    const llm = service(fetchImpl, { model: 'claude-opus-5', fallbackModel: 'qwen3.5-4b-32k-fast', responseFormat: 'prompt' });
+    await expect(llm.analyze(SAFE)).rejects.toThrow(/HTTP 401/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends temperature and response_format only to models that accept them', async () => {
+    const catalog = {
+      data: [
+        { id: 'claude-opus-5', supported_parameters: ['max_tokens', 'tools', 'tool_choice', 'stream'] },
+        { id: 'qwen3.5-4b-32k-fast', supported_parameters: ['max_tokens', 'temperature', 'stream'] },
+      ],
+    };
+    for (const [model, temperature] of [['claude-opus-5', undefined], ['qwen3.5-4b-32k-fast', 0.2]] as const) {
+      const fetchImpl = vi.fn(async (url: string) =>
+        url.endsWith('/models') ? new Response(JSON.stringify(catalog)) : gatewayResponse(SAMPLE_ANALYSIS),
+      );
+      const result = await service(fetchImpl, { model, responseFormat: 'auto' }).analyze(SAFE);
+      const [, init] = fetchImpl.mock.calls.find(([url]) => !String(url).endsWith('/models')) as unknown as [string, RequestInit];
+      const body = JSON.parse(String(init.body));
+      expect(body.temperature).toBe(temperature);
+      expect(body).not.toHaveProperty('response_format');
+      expect(result.meta.outputMode).toBe('prompt');
+    }
+
+    // Without the model list, the built-in tables give the same answer.
+    const offline = vi.fn(async () => gatewayResponse(SAMPLE_ANALYSIS));
+    await service(offline, { model: 'claude-opus-5', responseFormat: 'prompt' }).analyze(SAFE);
+    expect(JSON.parse(String((offline.mock.calls[0] as unknown as [string, RequestInit])[1].body))).not.toHaveProperty('temperature');
+  });
 });

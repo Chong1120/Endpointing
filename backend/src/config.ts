@@ -20,9 +20,11 @@ const EnvSchema = z.object({
   REDACTED_AUDIO_FORMAT: z.enum(['mp3', 'wav']).default('mp3'),
 
   LLM_GATEWAY_URL: z.url().default('https://llm-gateway.assemblyai.com/v1/chat/completions'),
-  LLM_MODEL: z.string().min(1).default('claude-sonnet-4-6'),
-  // Optional second model tried by the gateway if the first fails. Empty = none.
-  LLM_FALLBACK_MODEL: z.string().default(''),
+  // Tried first. While the AssemblyAI account can't use it, LLM_FALLBACK_MODEL
+  // serves the calls and LLM_MODEL is tried again every hour.
+  LLM_MODEL: z.string().min(1).default('claude-opus-5'),
+  // Also passed to the gateway as `fallbacks` for outages. Empty = no fallback.
+  LLM_FALLBACK_MODEL: z.string().default('qwen3.5-4b-32k-fast'),
   // auto = ask the gateway whether LLM_MODEL supports response_format.
   LLM_RESPONSE_FORMAT: z.enum(['auto', 'json_schema', 'prompt']).default('auto'),
 
