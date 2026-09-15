@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { callsRouter } from './routes/calls.js';
 import { insightsRouter } from './routes/insights.js';
 import { settingsRouter } from './routes/settings.js';
+import { voiceAgentRouter } from './routes/voiceAgent.js';
 import { webhooksRouter } from './routes/webhooks.js';
 
 /** Allows exact origins plus simple wildcards such as https://*.vercel.app */
@@ -42,6 +43,7 @@ export function createApp(deps: AppDeps): Express {
   api.use('/calls', callsRouter(deps));
   api.use(insightsRouter(deps));
   api.use(settingsRouter(deps));
+  api.use('/voice-agent', voiceAgentRouter(deps));
 
   app.use('/api', cors({ origin: corsOriginMatcher(deps.config.corsOrigins), maxAge: 600 }), api);
 

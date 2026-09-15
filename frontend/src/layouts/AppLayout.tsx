@@ -1,6 +1,7 @@
 import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
 import FactCheckRounded from '@mui/icons-material/FactCheckRounded';
 import ForumRounded from '@mui/icons-material/ForumRounded';
+import HeadsetMicRounded from '@mui/icons-material/HeadsetMicRounded';
 import InsightsRounded from '@mui/icons-material/InsightsRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import MenuRounded from '@mui/icons-material/MenuRounded';
@@ -35,6 +36,7 @@ const DRAWER_WIDTH = 252;
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
   { to: '/', label: 'Dashboard', icon: <SpaceDashboardRounded />, end: true },
+  { to: '/agent', label: 'Live agent', icon: <HeadsetMicRounded /> },
   { to: '/upload', label: 'Upload call', icon: <CloudUploadRounded /> },
   { to: '/calls', label: 'Calls & search', icon: <ForumRounded /> },
   { to: '/analytics', label: 'Analytics', icon: <InsightsRounded /> },
@@ -87,7 +89,7 @@ export function AppLayout() {
           PROTECTED BY ASSEMBLYAI
         </Typography>
         <Typography sx={{ fontSize: '0.75rem', color: '#94A3B8', mt: 0.5, lineHeight: 1.45 }}>
-          Universal-3.5 Pro · PII redaction for text & audio · LLM Gateway on safe data
+          Voice Agent API · Universal-3.5 Pro · PII redaction for text & audio · LLM Gateway on safe data
         </Typography>
       </Box>
 

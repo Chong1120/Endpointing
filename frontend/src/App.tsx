@@ -10,6 +10,7 @@ const page = <K extends string>(load: () => Promise<Record<K, React.ComponentTyp
   lazy(() => load().then((module) => ({ default: module[name] })));
 
 const DashboardPage = page(() => import('./pages/DashboardPage'), 'DashboardPage');
+const LiveAgentPage = page(() => import('./pages/LiveAgentPage'), 'LiveAgentPage');
 const UploadPage = page(() => import('./pages/UploadPage'), 'UploadPage');
 const CallsPage = page(() => import('./pages/CallsPage'), 'CallsPage');
 const CallDetailPage = page(() => import('./pages/CallDetailPage'), 'CallDetailPage');
@@ -59,6 +60,7 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
+          <Route path="agent" element={<LiveAgentPage />} />
           <Route path="upload" element={<UploadPage />} />
           <Route path="calls" element={<CallsPage />} />
           <Route path="calls/:id" element={<CallDetailPage />} />

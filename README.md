@@ -2,7 +2,7 @@
 
 **Turn sensitive conversations into safe, reusable business data.**
 
-SafeCall is a privacy-first archive for contact-center recordings. It sends every call through AssemblyAI for transcription, speaker separation and PII redaction, for both the transcript *and* the audio. Only the safe artifacts are stored: redacted audio, a redacted speaker-labelled transcript, PII statistics, AI insights generated from the redacted text, and a complete audit trail.
+SafeCall is a privacy-first archive for contact-center calls. Calls arrive from a **live AI voice agent** built on AssemblyAI's Voice Agent API, or as uploaded recordings. Every call goes through AssemblyAI for transcription, speaker separation and PII redaction, for both the transcript *and* the audio. Only the safe artifacts are stored: redacted audio, a redacted speaker-labelled transcript, PII statistics, AI insights generated from the redacted text, and a complete audit trail.
 
 Built for the **AssemblyAI Voice Agent Hackathon (lablab.ai, September 2026)**.
 
@@ -18,21 +18,24 @@ Built for the **AssemblyAI Voice Agent Hackathon (lablab.ai, September 2026)**.
 
 ## Problem
 
-Call recordings are some of the most valuable data a support organization has: customer issues, product feedback, agent quality, training material. They are also full of names, phone numbers, addresses, card numbers and account details. So they get locked away, deleted, or copied into analytics and AI tools with the sensitive details still inside.
+Call recordings are some of the most valuable data a support organization has: customer issues, product feedback, agent quality, training material. They are also full of names, phone numbers, addresses, card numbers and account details. So they get locked away, deleted, or copied into analytics and AI tools with the sensitive details still inside. AI voice agents make this worse: every call they take is recorded, and those recordings hold the same details.
 
 ## Solution
 
 SafeCall moves the privacy boundary to the front of the pipeline:
 
 ```
-RAW CALL  →  PROTECTED BY ASSEMBLYAI  →  SAFE CALL  →  AI ANALYSIS
-(temporary)  (transcribe · diarize ·      (redacted audio +  (LLM sees redacted
-              detect · redact text+audio)  transcript + stats) text only)
+LIVE AGENT CALL ──┐
+(Voice Agent API) │
+                  ├──→  PROTECTED BY ASSEMBLYAI  ──→  SAFE CALL  ──→  AI ANALYSIS
+UPLOADED CALL ────┘     transcribe · diarize ·        redacted audio   LLM sees redacted
+                        detect · redact text+audio    + transcript     text only
 ```
 
+- **Call the live agent.** Talk to Sam, the AI billing agent of Northwind Mobile (a fictional carrier), built on AssemblyAI's **Voice Agent API**: real-time speech in and out, natural turn-taking, and tool calls for account lookup, recent charges, refunds and contact updates. When you hang up, the call's recording goes through the same redaction pipeline as an upload.
 - **Upload** a recording, or run one of four synthetic demo calls.
 - **AssemblyAI** (Universal-3.5 Pro, falling back to Universal-2) transcribes it, separates speakers, detects PII against the chosen policy, redacts the transcript and produces a redacted audio file with the PII silenced.
-- The **raw upload is deleted** as soon as AssemblyAI has it. After archiving, the transcript is **deleted at AssemblyAI** too.
+- The **raw recording is deleted** as soon as AssemblyAI's transcription has it: the upload's temporary file, or the live call's session at AssemblyAI. After archiving, the transcript is **deleted at AssemblyAI** too.
 - The **safe archive** stores redacted audio in a private bucket, the redacted transcript and utterances, PII counts per entity type, and an audit record of every step.
 - **AI analysis** via AssemblyAI LLM Gateway runs *only* on the redacted transcript. It produces a summary, customer issue, resolution, sentiment, topics, action items, speaker roles and a QA note.
 - **Search, analytics, a PII protection report, safe-audio playback via signed URLs, and safe dataset export** (JSONL/CSV) make the data reusable.
@@ -43,17 +46,19 @@ Three hosted pieces, each with one job:
 
 | Piece | Hosted on | Job |
 | --- | --- | --- |
-| **Website** (React) | Vercel | The dashboard people sign in to |
-| **API** (one Node.js app) | Railway | Everything server-side: sign-in checks, uploads, AssemblyAI calls and its webhook, background processing, search, export |
+| **Website** (React) | Vercel | The dashboard people sign in to, including live agent calls |
+| **API** (one Node.js app) | Railway | Everything server-side: sign-in checks, single-use voice agent tokens, uploads, AssemblyAI calls and its webhook, background processing, search, export |
 | **Database, logins, file storage** | Supabase | The safe archive, user accounts, and the private bucket for redacted audio |
 
-Plus the AssemblyAI cloud services (speech-to-text + PII redaction, and the LLM Gateway).
+Plus the AssemblyAI cloud services: the Voice Agent API (live calls), speech-to-text with PII redaction, and the LLM Gateway.
 
 ```mermaid
 flowchart LR
   U[Browser] --> FE[Website<br/>Vercel]
   U -->|API calls + uploads| API[SafeCall API<br/>Railway · one Node.js app]
+  U <-->|live call audio · single-use token| VA[AssemblyAI<br/>Voice Agent API]
   FE -. sign-in .-> SB
+  API -->|token · fetch recording · delete session| VA
   API -->|upload, transcribe, redact| AAI[AssemblyAI]
   AAI -->|webhook when done| API
   API -->|redacted transcript only| LLM[AssemblyAI LLM Gateway]
@@ -67,12 +72,13 @@ flowchart LR
 ```
 safecall/
 ├── frontend/            React + Vite + MUI app (pages, components, layouts, services, hooks)
+│   └── src/voice/       Voice Agent WebSocket + audio client, Northwind mock tools
 ├── backend/
 │   ├── src/
-│   │   ├── routes/      REST API + /webhooks/assemblyai
+│   │   ├── routes/      REST API, /api/voice-agent, /webhooks/assemblyai
 │   │   ├── middleware/  auth, upload, errors
-│   │   ├── services/    assemblyai/ · llm/ · storage/ · audit · pii · analytics · export
-│   │   ├── pipeline/    intake (upload → AssemblyAI), processCall (after the webhook), sweep
+│   │   ├── services/    assemblyai/ (speech-to-text, Voice Agent, live agent) · llm/ · storage/ · audit · pii · analytics · export
+│   │   ├── pipeline/    intake (recording → AssemblyAI), processCall (after the webhook), voiceSession (live call → intake), sweep
 │   │   ├── queue/       in-process background runner (retries, dedupe)
 │   │   ├── db/          repository interfaces + Supabase implementations
 │   │   └── app.ts       Express app factory
@@ -86,15 +92,15 @@ safecall/
 
 | Layer | Choice |
 | --- | --- |
-| Website | React 19, Vite 8, Material UI 9, React Router 7, TypeScript — hosted on Vercel |
+| Website | React 19, Vite 8, Material UI 9, React Router 7, TypeScript, Web Audio (AudioWorklet) — hosted on Vercel |
 | API | Node.js 22, Express 5, TypeScript, Multer, zod, pino — hosted on Railway |
-| Voice AI | Official `assemblyai` Node SDK 4.41 (pre-recorded STT, PII redaction, redacted audio) + LLM Gateway |
+| Voice AI | AssemblyAI **Voice Agent API** (live agent), official `assemblyai` Node SDK 4.41 (pre-recorded STT, PII redaction, redacted audio), LLM Gateway |
 | Database / logins / storage | Supabase Postgres (full-text search), Supabase Auth, Supabase Storage (private bucket) |
 | Tests | Vitest + Supertest |
 
 ## AssemblyAI integration
 
-All parameters were checked against the live docs ([agent instructions](https://www.assemblyai.com/docs/agent-instructions.md), [llms.txt](https://www.assemblyai.com/docs/llms.txt), [PII redaction](https://www.assemblyai.com/docs/guardrails/redact-pii-from-transcripts)) and the SDK typings on 2026-09-14.
+All parameters were checked against the live docs ([agent instructions](https://www.assemblyai.com/docs/agent-instructions.md), [llms.txt](https://www.assemblyai.com/docs/llms.txt), [PII redaction](https://www.assemblyai.com/docs/guardrails/redact-pii-from-transcripts), [Voice Agent API](https://www.assemblyai.com/docs/voice-agents/voice-agent-api)) and the SDK typings on 2026-09-14 and 2026-09-15.
 
 **Transcription request** (`backend/src/services/assemblyai/transcription.ts`):
 
@@ -119,11 +125,30 @@ All parameters were checked against the live docs ([agent instructions](https://
   - Models without it get the same schema in the prompt. `LLM_RESPONSE_FORMAT=auto` checks the gateway's `/v1/models`.
 - **No deprecated parameters.** `summarization`, `auto_chapters` and LeMUR are not used.
 
+**Voice Agent API** (`backend/src/services/assemblyai/voiceAgent.ts` and `liveAgent.ts`, `frontend/src/voice/`):
+
+| Piece | How SafeCall uses it |
+| --- | --- |
+| `GET /v1/token` | The API mints a single-use token (`expires_in_seconds=120`, `max_session_duration_seconds=600`). The browser never sees the API key. |
+| `wss://agents.assemblyai.com/v1/ws?token=…` | The browser streams microphone audio as PCM16 mono 24 kHz (`input.audio`) and plays `reply.audio`. |
+| `session.update` | Inline agent: system prompt, greeting, voice `alba`, `language_codes: ["en"]`, keyterms, turn detection (`min_silence` 1400 ms, `max_silence` 4000 ms, barge-in on) and four JSON-Schema function tools. |
+| `tool.call` → `tool.result` | Tools run in the browser against mock Northwind data. Results go back when `reply.done` is the latest event. |
+| `reply.done` with `interrupted` | Queued agent audio is flushed when the caller barges in. |
+| `session.end` | Sent before the socket closes, so the 30-second resume window isn't billed. |
+| `GET /v1/sessions/{id}` | After the call, the API checks the organization reference in the session's system prompt and waits for the stereo OGG recording. |
+| `DELETE /v1/sessions/{id}` | Once the transcription job has the audio, the session (unredacted recording and timeline) is deleted. |
+
 ## Security model
 
 - **Raw audio is transient.** Multer streams uploads to the OS temp directory. The file is deleted immediately after it reaches AssemblyAI (`RAW_UPLOAD_DELETED`), and a periodic purge removes anything left by a crash.
 - **Only redacted data is archived.** The API refuses transcripts without `redact_pii`, copies only safe fields, and never reads `unredacted_*`.
 - **The LLM sees redacted text only.** `analyze()` accepts a branded `SafeText` type, so raw text can't be passed by accident. Its input is rebuilt from the archived redacted utterances.
+- **Live agent calls.**
+  - The browser talks to AssemblyAI with a single-use token, so the API key stays on the API and SafeCall's servers never receive live audio.
+  - No live transcript is shown, because it would be unredacted. The page shows the call state and the agent's actions only.
+  - Tool calls run against mock data in the browser.
+  - Only the organization that started a call can archive it: an HMAC reference in the session's system prompt is checked when archiving.
+  - After archiving, the AssemblyAI session is deleted (`VOICE_SESSION_DELETED`).
 - **Tenant isolation.**
   - Every API query is scoped to the caller's organization from the Supabase JWT.
   - Tables have RLS enabled with no policies for the browser roles, so the browser can't read them directly.
@@ -160,6 +185,8 @@ npx cloudflared tunnel --url http://localhost:4000   # prints https://<random>.t
 # backend/.env → PUBLIC_API_URL=https://<random>.trycloudflare.com
 ```
 
+The live agent works locally too: `localhost` counts as a secure origin, so the browser allows the microphone.
+
 The synthetic demo recordings are committed in `backend/samples/`. To regenerate them with Windows' built-in voices, run `npm run samples:generate`.
 
 ## Environment variables
@@ -169,7 +196,7 @@ See [.env.example](.env.example) for the annotated list.
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `ASSEMBLYAI_API_KEY` | API | AssemblyAI key (server-side only) |
-| `ASSEMBLYAI_WEBHOOK_SECRET` | API | Shared secret echoed in `X-SafeCall-Webhook-Secret` |
+| `ASSEMBLYAI_WEBHOOK_SECRET` | API | Shared secret echoed in `X-SafeCall-Webhook-Secret`; also signs live agent session references |
 | `ASSEMBLYAI_DELETE_AFTER_ARCHIVE` | API | Delete the transcript at AssemblyAI after archiving (default `true`) |
 | `REDACTED_AUDIO_FORMAT` | API | `mp3` (default) or `wav` |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | API | Project URL and the Supabase **secret** key (`sb_secret_…`, or the legacy `service_role` key) |
@@ -180,6 +207,8 @@ See [.env.example](.env.example) for the annotated list.
 | `CORS_ORIGINS` | API | Allowed browser origins (wildcards such as `https://*.vercel.app` are supported) |
 | `MAX_UPLOAD_MB`, `SIGNED_URL_TTL_SECONDS` | API | Upload limit (default 200 MB), signed URL lifetime (default 300 s) |
 | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Website | Public build-time values; the last one is the Supabase **publishable** key |
+
+The live agent needs no extra variables.
 
 ## Database setup
 
@@ -226,7 +255,7 @@ Copy the **Session pooler** string from **Connect** in the Supabase dashboard an
 5. Keep it at **one instance**, because background work runs inside this process.
 
 **3. Vercel (the website).**
-1. Import the repo with root directory `frontend`. The framework is detected as Vite, and `vercel.json` handles SPA rewrites and security headers.
+1. Import the repo with root directory `frontend`. The framework is detected as Vite, and `vercel.json` handles SPA rewrites and security headers. Its `Permissions-Policy` allows the microphone on the site itself, for the live agent.
 2. Set `VITE_API_URL=https://<api-domain>`, `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (the publishable key).
 
 **4. Wire it together.**
@@ -240,22 +269,27 @@ Uploads go straight from the browser to the Railway API. They never pass through
 ## Demo
 
 1. Sign up at `/login` (the organization name you enter becomes your isolated workspace).
-2. **Dashboard → Load demo calls.** This runs four synthetic recordings through the *real* pipeline (real AssemblyAI calls):
+2. **Live agent.** Click **Call the live agent** on the dashboard, then **Start call**, and allow the microphone.
+   - Tell Sam you were charged twice, give the made-up number 415 555 0142 and ask for the refund.
+   - Optionally, change your email to `jane.doe@example.com`.
+   - The tool calls appear under *What Sam did*.
+   - **End call** opens the call's Processing page. Its safe archive has your made-up details silenced in the audio and replaced with labels in the transcript.
+3. **Dashboard → Load demo calls.** This runs four synthetic recordings through the *real* pipeline (real AssemblyAI calls):
    | Sample | Shows |
    | --- | --- |
    | Account update (Customer Support) | Name, phone, email, address, card number and expiry are redacted. The spoken CVV is **not** caught (see [Limitations](#limitations)) |
    | Tech support (Technical Support) | Two speakers, many turns, an account number |
    | General inquiry | No PII — nothing is over-redacted |
    | Billing dispute (Billing, Financial policy) | Name, date of birth, account number, email, refund discussion |
-3. Open a call while it processes. The **Processing** page shows each real stage as the backend records it, with no simulated progress.
-4. Open the **safe archive**:
+4. Open a call while it processes. The **Processing** page shows each real stage as the backend records it, with no simulated progress.
+5. Open the **safe archive**:
    - the PII protection report;
    - a **safe recording** you can play, with a timeline marking the redacted segments (click a transcript timestamp to jump there);
    - the redacted transcript with agent/customer roles;
    - AI insights;
    - the audit trail.
-5. **Calls & search.** Search for "refund" or "card" and filter by PII type, sentiment, department or date. Then use **Export safe dataset** (JSONL or CSV).
-6. **Analytics**, **PII policies** (edit a preset) and **Audit trail** (every step, playback and export).
+6. **Calls & search.** Search for "refund" or "card" and filter by PII type, sentiment, department or date. Then use **Export safe dataset** (JSONL or CSV).
+7. **Analytics**, **PII policies** (edit a preset) and **Audit trail** (every step, playback and export).
 
 All sample data is synthetic: 555-01xx phone numbers, `example.com` emails, and the standard `4111…` test card.
 
@@ -277,6 +311,8 @@ All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and 
 
 | Method | Path | Description |
 | --- | --- | --- |
+| `POST` | `/api/voice-agent/session` | Single-use Voice Agent token plus the live agent's session config |
+| `POST` | `/api/voice-agent/sessions/:id/archive` | Fetch a finished live call's recording, run it through redaction, delete the AssemblyAI session → 202 |
 | `POST` | `/api/calls` | Upload a recording (multipart: `file`, `department`, `policy_preset`, `analysis_enabled`) → 202 |
 | `GET` | `/api/calls` | List calls (`status`, `department`, `sentiment`, `pii_type`, `from`, `to`, `page`, `page_size`) |
 | `GET` | `/api/calls/:id` | Safe archive: call, redacted utterances, audit events |
@@ -309,7 +345,8 @@ Coverage includes:
 - failed and successful AssemblyAI processing, and resumable retry;
 - the in-process background runner: dedupe, backoff, retry budget, and resuming after a restart;
 - storage paths and signed URLs;
-- LLM request shape and AI JSON validation;
+- LLM request shape, model fallback and AI JSON validation;
+- the live agent: token minting without exposing the API key, the organization check, waiting for the recording, archiving through the redaction pipeline, and deleting the AssemblyAI session;
 - audit sanitization, analytics and the export formats;
 - an end-to-end test: upload → AssemblyAI job → webhook → background processing → safe archive.
 
@@ -325,10 +362,19 @@ The pipeline was run end to end against real AssemblyAI (Universal-3.5 Pro), the
   - The API ran with a new-style Supabase secret key (`sb_secret_…`), and sign-in used a publishable key (`sb_publishable_…`).
   - A call left mid-pipeline by a simulated crash was resumed automatically when the API started.
   - A fresh call completed end to end through in-process background processing.
+- **Live agent** (2026-09-15, real Voice Agent API):
+  - A session accepted SafeCall's inline config (voice, four tools, turn detection) and reached `session.ready` in about 1 s, then Sam spoke the greeting.
+  - After `session.end`, the stereo OGG recording was available within about 4 s.
+  - The organization check matched the reference read back from the session, and rejected another organization.
+  - `DELETE /v1/sessions/{id}` removed the session; looking it up afterwards returned 404.
+  - A second session's recording went through the archive path: downloaded, uploaded with SafeCall's exact redaction request, and transcribed (even the agent's own name came back as `[PERSON_NAME]`). The redacted audio was ready, and then both the transcript and the voice session were deleted at AssemblyAI.
 
 ## Limitations
 
 - **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123". That applied to both the transcript and the audio, and adding `number_sequence` didn't catch it either. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
+- **The live agent hears the live call.** Like any voice agent, AssemblyAI processes the unredacted conversation while the call is happening. SafeCall's guarantee covers what is stored and reused afterwards, and the session is deleted once it is archived.
+- **Live agent calls need a browser with a microphone.** They are built for Chrome and Edge. Firefox and Safari use a resampling path that hasn't been tested yet. Calls are capped at 10 minutes.
+- **Closing the tab mid-call** relies on a `keepalive` request to archive the call. If that request never arrives, the session stays at AssemblyAI until it is deleted, so keep AssemblyAI's data retention short.
 - **PII counts are derived from redaction labels.** AssemblyAI redacts word by word, so SafeCall groups adjacent same-type labels into one entity. Two same-type entities separated only by a comma may be counted as one.
 - **LLM model access depends on your AssemblyAI account.** LLM Gateway isn't covered by AssemblyAI's free credits, and on the account used for development only `qwen3.5-4b-32k-fast` was accessible; Claude, GPT and Gemini returned "no access". SafeCall asks for `LLM_MODEL` (default `claude-opus-5`) first. While the account can't use it, `LLM_FALLBACK_MODEL` (default `qwen3.5-4b-32k-fast`) answers and the first model is tried again every hour, so enabling billing upgrades the analysis without a redeploy. The model that produced each analysis is stored with it and in the call's audit trail.
 - **Single API instance.** Background work runs inside the API process, and the database lets it resume after restarts. Running several instances would need a shared queue again.
@@ -345,6 +391,7 @@ The pipeline was run end to end against real AssemblyAI (Universal-3.5 Pro), the
 - Human review queue for low-confidence or high-risk calls
 - A shared job queue for running several API instances
 - Streaming redaction for live calls (AssemblyAI streaming PII redaction)
+- Phone access to the live agent through AssemblyAI's SIP integration (Twilio)
 - Custom entity lists via `redact_static_entities` (product names, internal codes)
 
 ## License

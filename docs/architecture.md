@@ -8,7 +8,9 @@ SafeCall turns recorded customer calls into a **safe archive**: redacted audio, 
 flowchart LR
   U[Browser] --> FE[Website<br/>Vercel]
   U -->|API calls + uploads| API[SafeCall API<br/>Railway · one Node.js app]
+  U <-->|live call audio · single-use token| VA[AssemblyAI<br/>Voice Agent API]
   FE -. sign-in .-> SB
+  API -->|token · fetch recording · delete session| VA
   API -->|upload, transcribe, redact| AAI[AssemblyAI]
   AAI -->|webhook when done| API
   API -->|redacted transcript only| LLM[AssemblyAI LLM Gateway]
@@ -17,7 +19,7 @@ flowchart LR
 
 | Piece | Hosted on | Responsibility |
 | --- | --- | --- |
-| **Website** (`frontend/`) | Vercel | Sign-in, upload, live processing view, safe archive, search, analytics, policies, audit. It talks only to the API, never to tables or storage directly. |
+| **Website** (`frontend/`) | Vercel | Sign-in, the live agent call, upload, live processing view, safe archive, search, analytics, policies, audit. It talks to the API, and during a live call to AssemblyAI's Voice Agent WebSocket; never to tables or storage directly. |
 | **API** (`backend/`) | Railway | The only server. Checks sign-ins and scopes everything to the caller's organization. Receives uploads, calls AssemblyAI, receives the webhook, runs the background pipeline, issues signed audio URLs, and serves search, analytics and export. |
 | **Database, logins, storage** (`database/migrations/`) | Supabase | Postgres tables (`organizations`, `users`, `calls`, `call_utterances`, `audit_logs`, `pii_policy_settings`), full-text search over safe data, Supabase Auth, and the private `safe-call-audio` bucket. RLS is enabled with no anon/auth policies. |
 
@@ -33,6 +35,38 @@ AssemblyAI expects its webhook to be answered within 10 seconds, so the webhook 
 - **Local development.** Without a public HTTPS URL, submissions omit `webhook_url` and the API checks the transcript status on a timer instead.
 
 This design assumes **one API instance**. To scale horizontally, reintroduce a shared queue (for example Redis + BullMQ) behind the same `JobQueue` interface.
+
+## Live agent (Voice Agent API)
+
+The **Live agent** page lets anyone in the organization call "Sam", a billing agent for the fictional Northwind Mobile, built on AssemblyAI's Voice Agent API. The conversation is live and two-way; SafeCall only acts before and after it.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant A as API (Railway)
+  participant V as AssemblyAI Voice Agent API
+  participant X as AssemblyAI speech-to-text
+  B->>A: POST /api/voice-agent/session
+  A->>V: GET /v1/token (the API key stays on the server)
+  A-->>B: single-use token + agent config (prompt, voice, tools, org reference)
+  B->>V: WebSocket ?token=… · session.update
+  V-->>B: session.ready · reply.audio · tool.call
+  B->>V: input.audio (PCM16, 24 kHz) · tool.result
+  B->>V: session.end
+  B->>A: POST /api/voice-agent/sessions/{id}/archive
+  A->>V: GET /v1/sessions/{id} (check the org reference, wait for the recording)
+  A->>X: normal intake: temp file → files.upload → delete temp file → redacted transcription
+  A->>V: DELETE /v1/sessions/{id} · VOICE_SESSION_DELETED
+```
+
+- **Keys.** The browser gets a single-use token that must be redeemed within 2 minutes and caps the call at 10 minutes. The AssemblyAI API key never leaves the API.
+- **No live audio or transcript through SafeCall.** Audio flows between the browser and AssemblyAI. The page shows the call state and the agent's actions only; live transcript events are ignored because they are unredacted.
+- **Tools run in the browser** against mock Northwind data (`frontend/src/voice/northwindTools.ts`), so what a caller tells a tool never reaches the API.
+- **Ownership without state.** The system prompt carries an HMAC of the organization id, keyed with the webhook secret. When archiving, the API reads the prompt back from AssemblyAI and checks it, so an organization can only archive its own calls, even across restarts.
+- **Same pipeline as uploads.** The stereo OGG recording (caller on the left, agent on the right) is archived like any upload: department `AI Voice Agent`, Contact Center policy, AI analysis on. Nothing in the live path bypasses redaction.
+- **AssemblyAI's copy is deleted.** The voice session holds an unredacted recording and conversation timeline, so it is deleted as soon as the transcription job has the audio. If the caller closes the tab mid-call, the page still sends the archive request with `fetch(…, { keepalive: true })`.
+- **Browser audio.** Capture runs at the device rate and an AudioWorklet resamples to 24 kHz, because a forced 24 kHz context loses echo cancellation in Firefox and is ignored by Safari. Echo cancellation is on and browser noise suppression is off, as AssemblyAI recommends.
 
 ## Data flow and the privacy boundary
 

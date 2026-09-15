@@ -3,6 +3,7 @@ import CheckCircleRounded from '@mui/icons-material/CheckCircleRounded';
 import CloudUploadRounded from '@mui/icons-material/CloudUploadRounded';
 import ForumRounded from '@mui/icons-material/ForumRounded';
 import GraphicEqRounded from '@mui/icons-material/GraphicEqRounded';
+import HeadsetMicRounded from '@mui/icons-material/HeadsetMicRounded';
 import Inventory2Rounded from '@mui/icons-material/Inventory2Rounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import PlaylistPlayRounded from '@mui/icons-material/PlaylistPlayRounded';
@@ -63,8 +64,11 @@ export function DashboardPage() {
             <Button variant="outlined" startIcon={<PlaylistPlayRounded />} onClick={() => void loadDemoCalls()} disabled={running}>
               {running ? 'Sending demo calls…' : 'Load demo calls'}
             </Button>
-            <Button variant="contained" startIcon={<CloudUploadRounded />} component={RouterLink} to="/upload">
+            <Button variant="outlined" startIcon={<CloudUploadRounded />} component={RouterLink} to="/upload">
               Upload call
+            </Button>
+            <Button variant="contained" startIcon={<HeadsetMicRounded />} component={RouterLink} to="/agent">
+              Call the live agent
             </Button>
           </>
         }

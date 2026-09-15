@@ -7,6 +7,7 @@ import type {
   CallDetail,
   CallFilters,
   CallListItem,
+  LiveAgentSession,
   Me,
   Paged,
   PoliciesResponse,
@@ -25,7 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-async function accessToken(): Promise<string | null> {
+export async function accessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ?? null;
 }
@@ -112,6 +113,20 @@ async function exportDataset(format: 'jsonl' | 'csv', filters: CallFilters): Pro
   return { blob: await response.blob(), filename };
 }
 
+const archivePath = (sessionId: string) => `/api/voice-agent/sessions/${encodeURIComponent(sessionId)}/archive`;
+
+/**
+ * Archives a live-agent call while the page is closing. `keepalive` lets the
+ * request outlive the tab, and the API finishes the work even if nobody waits.
+ */
+function archiveLiveAgentCallOnExit(sessionId: string, token: string) {
+  void fetch(`${API_URL}${archivePath(sessionId)}`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => undefined);
+}
+
 export const api = {
   me: () => request<Me>('/api/me'),
   listCalls: (filters: CallFilters = {}) => request<Paged<CallListItem>>(`/api/calls${toQuery(filters)}`),
@@ -137,6 +152,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ analysis_enabled: analysisEnabled }),
     }),
+  startLiveAgent: () => request<LiveAgentSession>('/api/voice-agent/session', { method: 'POST' }),
+  archiveLiveAgentCall: (sessionId: string) => request<{ call: Call }>(archivePath(sessionId), { method: 'POST' }),
+  archiveLiveAgentCallOnExit,
   uploadCall,
   exportDataset,
 };

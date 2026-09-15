@@ -11,7 +11,7 @@ import { EmptyState, PageHeader } from '../components/common';
 import { ExportMenu } from '../components/ExportMenu';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { api } from '../services/api';
-import { DEPARTMENTS, type CallFilters, type CallStatus, type Sentiment } from '../services/types';
+import { FILTER_DEPARTMENTS, type CallFilters, type CallStatus, type Sentiment } from '../services/types';
 import { IN_PROGRESS, entityLabel } from '../utils/format';
 
 const STATUS_OPTIONS: Array<{ value: CallStatus; label: string }> = [
@@ -108,7 +108,7 @@ export function CallsPage() {
             </TextField>
             <TextField size="small" select label="Department" value={filters.department ?? ''} onChange={(e) => update('department', e.target.value)} sx={{ width: 170 }}>
               <MenuItem value="">All</MenuItem>
-              {DEPARTMENTS.map((d) => (
+              {FILTER_DEPARTMENTS.map((d) => (
                 <MenuItem key={d} value={d}>
                   {d}
                 </MenuItem>

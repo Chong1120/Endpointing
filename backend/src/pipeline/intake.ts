@@ -16,6 +16,8 @@ export interface IntakeRequest {
   policies: PiiPolicyName[];
   analysisEnabled: boolean;
   source: 'upload' | 'sample';
+  /** Extra technical facts for the CALL_RECEIVED audit event (IDs and counts only). */
+  receivedMetadata?: Record<string, unknown>;
 }
 
 export async function removeTempFile(filePath: string, deps: Pick<PipelineDeps, 'logger'>): Promise<boolean> {
@@ -64,6 +66,7 @@ export async function intakeCall(deps: PipelineDeps, request: IntakeRequest): Pr
       policy_preset: request.preset,
       ai_analysis: request.analysisEnabled,
       source: request.source,
+      ...request.receivedMetadata,
     },
   });
 

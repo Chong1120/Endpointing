@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { pino } from 'pino';
 import type { AppConfig } from '../../src/config.js';
 import type {
@@ -26,6 +27,7 @@ import type {
   TranscriptionService,
   TranscriptResult,
 } from '../../src/services/assemblyai/transcription.js';
+import type { VoiceAgentService, VoiceSession } from '../../src/services/assemblyai/voiceAgent.js';
 import { RepositoryAuditLogger } from '../../src/services/audit.js';
 import type { AnalysisResult, AnalysisService } from '../../src/services/llm/analysis.js';
 import { FileSampleCatalog } from '../../src/services/samples.js';
@@ -407,6 +409,45 @@ export class FakeAuthVerifier implements AuthVerifier {
   }
 }
 
+/** Mock Voice Agent REST API. A session can report "active" (no recording yet) for a number of lookups. */
+export class FakeVoiceAgentService implements VoiceAgentService {
+  readonly tokenRequests: Array<{ expiresInSeconds: number; maxSessionSeconds: number }> = [];
+  readonly sessions = new Map<string, VoiceSession>();
+  readonly activeLookups = new Map<string, number>();
+  readonly downloads: string[] = [];
+  readonly deleted: string[] = [];
+  recording = Buffer.from('OggS-fake-live-agent-recording');
+  lookups = 0;
+
+  async createToken(options: { expiresInSeconds: number; maxSessionSeconds: number }) {
+    this.tokenRequests.push(options);
+    return 'voice-token-single-use';
+  }
+
+  async getSession(sessionId: string): Promise<VoiceSession | null> {
+    this.lookups += 1;
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const remaining = this.activeLookups.get(sessionId) ?? 0;
+    if (remaining > 0) {
+      this.activeLookups.set(sessionId, remaining - 1);
+      return { ...session, status: 'active', recordingUrl: null };
+    }
+    return { ...session };
+  }
+
+  async downloadRecording(url: string, filePath: string) {
+    this.downloads.push(url);
+    await writeFile(filePath, this.recording);
+    return this.recording.length;
+  }
+
+  async deleteSession(sessionId: string) {
+    this.deleted.push(sessionId);
+    this.sessions.delete(sessionId);
+  }
+}
+
 export function buildTestDeps(overrides: Partial<AppConfig> = {}) {
   const calls = new InMemoryCallRepository();
   const auditEvents = new InMemoryAuditRepository();
@@ -417,6 +458,7 @@ export function buildTestDeps(overrides: Partial<AppConfig> = {}) {
   const storage = new InMemoryStorage();
   const queue = new InMemoryQueue();
   const authVerifier = new FakeAuthVerifier();
+  const voiceAgent = new FakeVoiceAgentService();
 
   const deps: AppDeps = {
     config: testConfig(overrides),
@@ -432,7 +474,8 @@ export function buildTestDeps(overrides: Partial<AppConfig> = {}) {
     policies,
     authVerifier,
     samples: new FileSampleCatalog(),
+    voiceAgent,
     sleep: async () => undefined,
   };
-  return { deps, calls, auditEvents, users, policies, transcription, analysis, storage, queue, authVerifier };
+  return { deps, calls, auditEvents, users, policies, transcription, analysis, storage, queue, authVerifier, voiceAgent };
 }

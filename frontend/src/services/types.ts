@@ -3,6 +3,19 @@ export type PolicyPreset = 'CONTACT_CENTER' | 'FINANCIAL' | 'HEALTHCARE' | 'CUST
 export type Sentiment = 'positive' | 'neutral' | 'negative';
 
 export const DEPARTMENTS = ['Customer Support', 'Billing', 'Technical Support', 'Collections', 'Sales', 'General Inquiry'];
+/** Department recorded on calls taken by the live agent. */
+export const LIVE_AGENT_DEPARTMENT = 'AI Voice Agent';
+/** Filter choices: the upload departments plus live-agent calls. */
+export const FILTER_DEPARTMENTS = [...DEPARTMENTS, LIVE_AGENT_DEPARTMENT];
+
+/** What the API returns to start a live-agent call. */
+export interface LiveAgentSession {
+  token: string;
+  websocket_url: string;
+  max_session_seconds: number;
+  /** Sent unchanged as the first `session.update`. */
+  session: Record<string, unknown>;
+}
 
 export interface CallAnalysis {
   summary: string;

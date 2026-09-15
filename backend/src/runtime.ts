@@ -14,6 +14,7 @@ import { createLogger } from './logger.js';
 import { SupabaseAuthVerifier } from './middleware/auth.js';
 import { BackgroundJobQueue } from './queue/backgroundQueue.js';
 import { AssemblyAITranscriptionService } from './services/assemblyai/transcription.js';
+import { AssemblyAIVoiceAgentService } from './services/assemblyai/voiceAgent.js';
 import { RepositoryAuditLogger } from './services/audit.js';
 import { LlmGatewayAnalysisService } from './services/llm/analysis.js';
 import { FileSampleCatalog } from './services/samples.js';
@@ -45,6 +46,7 @@ export function buildRuntime(config: AppConfig, serviceName = 'safecall-api') {
       onModelUnavailable: (model, fallbackModel, reason) =>
         logger.warn({ model, fallbackModel, reason }, 'LLM model not available to this account; using the fallback model for the next hour'),
     }),
+    voiceAgent: new AssemblyAIVoiceAgentService({ apiKey: config.assemblyai.apiKey }),
     storage: new SupabaseSafeAudioStorage(db, config.supabase.audioBucket, config.maxUploadBytes * 4),
     queue,
     users: new SupabaseUserRepository(db),

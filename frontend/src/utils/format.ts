@@ -100,6 +100,8 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
   DATASET_EXPORTED: 'Safe dataset exported',
   POLICY_UPDATED: 'PII policy updated',
   CALL_DELETED: 'Call deleted',
+  VOICE_SESSION_STARTED: 'Live agent call started',
+  VOICE_SESSION_DELETED: 'Voice session deleted from AssemblyAI',
 };
 
 export const auditLabel = (type: string) => AUDIT_EVENT_LABELS[type] ?? type;
@@ -158,6 +160,10 @@ export function auditDetail(type: string, meta: Record<string, unknown>): string
       return meta.reset ? `${String(meta.preset)} reset to default` : `${String(meta.preset)} · ${n('policies_count') ?? 0} entity types`;
     case 'CALL_DELETED':
       return String(meta.call_reference ?? '');
+    case 'VOICE_SESSION_STARTED':
+      return `Voice Agent API · voice ${String(meta.voice ?? '')} · up to ${Math.round((n('max_session_seconds') ?? 0) / 60)} min`;
+    case 'VOICE_SESSION_DELETED':
+      return 'Unredacted recording and conversation removed from AssemblyAI';
     default:
       return '';
   }
