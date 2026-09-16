@@ -36,7 +36,8 @@ class SafeCallPcmCapture extends AudioWorkletProcessor {
     super();
     const o = options.processorOptions;
     this.step = o.inputSampleRate / o.targetSampleRate;
-    this.chunk = new Int16Array(o.chunkSamples);
+    this.size = o.chunkSamples;
+    this.chunk = new Int16Array(this.size);
     this.filled = 0;
     this.offset = 0;
   }
@@ -50,9 +51,11 @@ class SafeCallPcmCapture extends AudioWorkletProcessor {
       const b = i + 1 < input.length ? input[i + 1] : a;
       const s = Math.max(-1, Math.min(1, a + (b - a) * (pos - i)));
       this.chunk[this.filled++] = Math.round(s * 32767);
-      if (this.filled === this.chunk.length) {
+      if (this.filled === this.size) {
+        // Transferring the buffer detaches it and its length reads 0 afterwards,
+        // so the next chunk is sized from this.size, never from the old array.
         this.port.postMessage(this.chunk.buffer, [this.chunk.buffer]);
-        this.chunk = new Int16Array(this.chunk.length);
+        this.chunk = new Int16Array(this.size);
         this.filled = 0;
       }
       pos += this.step;
@@ -121,6 +124,11 @@ export class LiveAgentCall {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private workletUrl: string | null = null;
+  // The capture nodes must stay referenced for the whole call. Nodes that only the
+  // audio graph points to get garbage-collected, and with them the worklet's
+  // message port, which silently stops the microphone stream.
+  private mic: MediaStreamAudioSourceNode | null = null;
+  private capture: AudioWorkletNode | null = null;
   private agentOut: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
   private levelTimer: number | null = null;
@@ -174,11 +182,17 @@ export class LiveAgentCall {
     const capture = new AudioWorkletNode(context, 'safecall-pcm-capture', {
       processorOptions: { inputSampleRate: context.sampleRate, targetSampleRate: RATE, chunkSamples: CHUNK_SAMPLES },
     });
+    this.mic = mic;
+    this.capture = capture;
     capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
       const ws = this.ws;
       if (this.ready && ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input.audio', audio: toBase64(event.data) }));
       }
+    };
+    capture.onprocessorerror = () => {
+      this.fatalMessage = 'The microphone stopped working. Start the call again.';
+      this.dispose();
     };
     mic.connect(capture);
     // The worklet outputs silence; connecting it keeps the browser running it.
@@ -214,7 +228,7 @@ export class LiveAgentCall {
   /** Immediate teardown, for cancelling or leaving the page. */
   dispose() {
     this.sendEnd();
-    this.finish();
+    this.finish(this.fatalMessage);
   }
 
   private sendEnd(): boolean {
@@ -373,6 +387,15 @@ export class LiveAgentCall {
       ws.onclose = null;
       if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) ws.close();
     }
+    if (this.capture) {
+      this.capture.port.onmessage = null;
+      this.capture.onprocessorerror = null;
+      this.capture.port.close();
+      this.capture.disconnect();
+    }
+    this.mic?.disconnect();
+    this.capture = null;
+    this.mic = null;
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;
     const context = this.context;
