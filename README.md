@@ -85,7 +85,6 @@ safecall/
 │   ├── samples/         synthetic demo recordings + generator script
 │   └── tests/           Vitest suite (AssemblyAI mocked)
 ├── database/migrations/ SQL schema
-├── examples/            the same live agent as one runnable Python script
 └── docs/                architecture + screenshots
 ```
 
