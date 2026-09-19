@@ -118,8 +118,36 @@ export interface CallDetail {
   audit: AuditEvent[];
 }
 
+export type UserRole = 'admin' | 'analyst' | 'agent' | 'viewer';
+
+export type Permission =
+  | 'calls:read'
+  | 'calls:upload'
+  | 'calls:delete'
+  | 'calls:recheck'
+  | 'policies:write'
+  | 'export'
+  | 'audit:read'
+  | 'followups:read'
+  | 'followups:resolve'
+  | 'agent:call'
+  | 'team:manage';
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  role: UserRole;
+  is_you: boolean;
+}
+
+export interface Team {
+  organization: { id: string; name: string };
+  members: TeamMember[];
+  invite: { code: string; valid_for_days: number } | null;
+}
+
 export interface Me {
-  user: { id: string; email: string; role: 'admin' | 'analyst' | 'viewer' };
+  user: { id: string; email: string; role: UserRole; permissions: Permission[] };
   organization: { id: string; name: string };
   platform: {
     webhooks_enabled: boolean;
@@ -184,4 +212,20 @@ export interface CallFilters {
   to?: string;
   page?: number;
   page_size?: number;
+}
+
+/** One call the AI agent handed to a person, as returned by /api/follow-ups. */
+export interface FollowUp {
+  id: string;
+  reference: string;
+  department: string;
+  status: CallStatus;
+  sentiment: Sentiment | null;
+  topics: string[];
+  summary: string | null;
+  pii_total: number;
+  duration_seconds: number | null;
+  created_at: string;
+  reason: string;
+  requested_at: string;
 }

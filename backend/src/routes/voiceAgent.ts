@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { badRequest, conflict, serviceUnavailable } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { presentCall } from '../http/presenters.js';
-import { getAuth } from '../middleware/auth.js';
+import { getAuth, requirePermission } from '../middleware/auth.js';
 import { describeError } from '../pipeline/failures.js';
 import { archiveVoiceSession } from '../pipeline/voiceSession.js';
 import {
@@ -15,13 +15,20 @@ import {
 import { VOICE_AGENT_WS_URL } from '../services/assemblyai/voiceAgent.js';
 
 const SESSION_ID = /^[A-Za-z0-9_-]{6,128}$/;
+/** Why the agent handed the call to a person. No free text, so nothing the caller said travels with it. */
+const ESCALATION_REASONS = ['customer_requested', 'upset_customer', 'out_of_scope', 'payment_issue'];
+
+function escalationReason(body: unknown): string | null {
+  const value = (body as { escalation?: { reason?: unknown } } | null)?.escalation?.reason;
+  return typeof value === 'string' && ESCALATION_REASONS.includes(value) ? value : null;
+}
 
 /** Live agent: a single-use Voice Agent token for the browser, and archiving of finished calls. */
 export function voiceAgentRouter(deps: AppDeps): Router {
   const router = Router();
   const archiving = new Set<string>();
 
-  router.post('/session', async (req, res) => {
+  router.post('/session', requirePermission('agent:call'), async (req, res) => {
     const auth = getAuth(req);
     let token: string;
     try {
@@ -48,7 +55,7 @@ export function voiceAgentRouter(deps: AppDeps): Router {
     });
   });
 
-  router.post('/sessions/:sessionId/archive', async (req, res) => {
+  router.post('/sessions/:sessionId/archive', requirePermission('agent:call'), async (req, res) => {
     const auth = getAuth(req);
     const sessionId = String(req.params.sessionId);
     if (!SESSION_ID.test(sessionId)) throw badRequest('Invalid session id.');
@@ -56,7 +63,17 @@ export function voiceAgentRouter(deps: AppDeps): Router {
     archiving.add(sessionId);
     try {
       const call = await archiveVoiceSession(deps, auth, sessionId);
-      res.status(202).json({ call: presentCall(call) });
+      const reason = escalationReason(req.body);
+      if (reason) {
+        await deps.audit.record({
+          orgId: auth.orgId,
+          callId: call.id,
+          type: 'FOLLOW_UP_REQUESTED',
+          actorId: auth.userId,
+          metadata: { reason, channel: 'live_agent', voice_session_id: sessionId },
+        });
+      }
+      res.status(202).json({ call: presentCall(call), follow_up: reason });
     } finally {
       archiving.delete(sessionId);
     }

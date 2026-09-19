@@ -17,7 +17,7 @@ import { CallsTable } from '../components/CallsTable';
 import { EmptyState, PageHeader, SectionCard, StatCard } from '../components/common';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useDemoCalls } from '../hooks/useDemoCalls';
-import { useMe } from '../hooks/useMe';
+import { useCan, useMe } from '../hooks/useMe';
 import { api } from '../services/api';
 import { brand } from '../theme';
 import { IN_PROGRESS, numberFormat } from '../utils/format';
@@ -42,6 +42,8 @@ function Guarantee({ icon, title, text }: { icon: ReactNode; title: string; text
 
 export function DashboardPage() {
   const me = useMe();
+  const canUpload = useCan('calls:upload');
+  const canCall = useCan('agent:call');
   const analytics = useApiQuery(() => api.analytics(), [], { poll: (d) => (d && d.totals.in_progress > 0 ? 4000 : false) });
   const recent = useApiQuery(() => api.listCalls({ page_size: 8 }), [], {
     poll: (d) => (d?.items.some((c) => IN_PROGRESS.includes(c.status)) ? 3000 : false),
@@ -61,15 +63,21 @@ export function DashboardPage() {
         subtitle="Turn sensitive conversations into safe, reusable business data."
         actions={
           <>
-            <Button variant="outlined" startIcon={<PlaylistPlayRounded />} onClick={() => void loadDemoCalls()} disabled={running}>
-              {running ? 'Sending demo calls…' : 'Load demo calls'}
-            </Button>
-            <Button variant="outlined" startIcon={<CloudUploadRounded />} component={RouterLink} to="/upload">
-              Upload call
-            </Button>
-            <Button variant="contained" startIcon={<HeadsetMicRounded />} component={RouterLink} to="/agent">
-              Call the live agent
-            </Button>
+            {canUpload && (
+              <>
+                <Button variant="outlined" startIcon={<PlaylistPlayRounded />} onClick={() => void loadDemoCalls()} disabled={running}>
+                  {running ? 'Sending demo calls…' : 'Load demo calls'}
+                </Button>
+                <Button variant="outlined" startIcon={<CloudUploadRounded />} component={RouterLink} to="/upload">
+                  Upload call
+                </Button>
+              </>
+            )}
+            {canCall && (
+              <Button variant="contained" startIcon={<HeadsetMicRounded />} component={RouterLink} to="/agent">
+                Call the live agent
+              </Button>
+            )}
           </>
         }
       />
@@ -127,14 +135,16 @@ export function DashboardPage() {
                 title="Your safe archive is empty"
                 description="Upload a recording, or load four synthetic demo calls. They run through the real AssemblyAI pipeline and include fake names, phone numbers and cards."
                 action={
-                  <Stack direction="row" spacing={1}>
-                    <Button variant="contained" onClick={() => void loadDemoCalls()} disabled={running} startIcon={<PlaylistPlayRounded />}>
-                      {running ? 'Sending…' : 'Load demo calls'}
-                    </Button>
-                    <Button variant="outlined" component={RouterLink} to="/upload">
-                      Upload a call
-                    </Button>
-                  </Stack>
+                  canUpload ? (
+                    <Stack direction="row" spacing={1}>
+                      <Button variant="contained" onClick={() => void loadDemoCalls()} disabled={running} startIcon={<PlaylistPlayRounded />}>
+                        {running ? 'Sending…' : 'Load demo calls'}
+                      </Button>
+                      <Button variant="outlined" component={RouterLink} to="/upload">
+                        Upload a call
+                      </Button>
+                    </Stack>
+                  ) : undefined
                 }
               />
             ) : (

@@ -14,7 +14,7 @@ Built for the **AssemblyAI Voice Agent Hackathon (lablab.ai, September 2026)**.
 
 ## Contents
 
-1. [Problem](#problem) · 2. [Solution](#solution) · 3. [Architecture](#architecture) · 4. [Technology stack](#technology-stack) · 5. [AssemblyAI integration](#assemblyai-integration) · 6. [Security model](#security-model) · 7. [Local setup](#local-setup) · 8. [Environment variables](#environment-variables) · 9. [Database setup](#database-setup) · 10. [Deployment](#deployment) · 11. [Demo](#demo) · 12. [Screenshots](#screenshots) · 13. [API](#api-endpoints) · 14. [Tests](#tests) · 15. [Limitations](#limitations) · 16. [Roadmap](#roadmap)
+1. [Problem](#problem) · 2. [Solution](#solution) · 3. [Architecture](#architecture) · 4. [Technology stack](#technology-stack) · 5. [AssemblyAI integration](#assemblyai-integration) · 6. [Security model](#security-model) · 7. [Local setup](#local-setup) · 8. [Environment variables](#environment-variables) · 9. [Roles](#roles) · 10. [Database setup](#database-setup) · 11. [Deployment](#deployment) · 12. [Demo](#demo) · 13. [Screenshots](#screenshots) · 14. [API](#api-endpoints) · 15. [Tests](#tests) · 16. [Limitations](#limitations) · 17. [Roadmap](#roadmap)
 
 ## Problem
 
@@ -33,6 +33,7 @@ UPLOADED CALL ────┘     transcribe · diarize ·        redacted audio
 ```
 
 - **Call the live agent.** Talk to Sam, the AI billing agent of Northwind Mobile (a fictional carrier), built on AssemblyAI's **Voice Agent API**: real-time speech in and out, natural turn-taking, and tool calls for account lookup, recent charges, refunds and contact updates. When you hang up, the call's recording goes through the same redaction pipeline as an upload.
+- **Handover to a person.** When a caller asks for a human, stays upset, or needs something Sam cannot do, Sam calls `transfer_to_human`, promises a callback and wraps up. The call lands in **Escalations** with the reason only — never a word of what was said — for a support agent to pick up once the recording is redacted.
 - **Upload** a recording, or run one of four synthetic demo calls.
 - **AssemblyAI** (Universal-3.5 Pro, falling back to Universal-2) transcribes it, separates speakers, detects PII against the chosen policy, redacts the transcript and produces a redacted audio file with the PII silenced.
 - The **raw recording is deleted** as soon as AssemblyAI's transcription has it: the upload's temporary file, or the live call's session at AssemblyAI. After archiving, the transcript is **deleted at AssemblyAI** too.
@@ -210,9 +211,22 @@ See [.env.example](.env.example) for the annotated list.
 
 The live agent needs no extra variables.
 
+## Roles
+
+Everyone who signs up gets their own workspace and is its admin. An admin's **Team** page has an invite code (signed with the API secret, valid for seven days, stored nowhere); a teammate signs up, pastes it under *Join a workspace*, and arrives as a support agent. The admin can then change their role.
+
+| Role | What it is for | What it may do |
+| --- | --- | --- |
+| **Admin** | Runs the workspace | Everything below, plus PII policies, deletes, re-running redaction and the team |
+| **Analyst** | Studies the safe archive | Read calls, search, analytics, audit trail, dataset export, add calls, call the live agent |
+| **Support agent** | Works escalated calls | Read calls, the Escalations queue (and close items on it), call the live agent |
+| **Viewer** | Looks only | Read calls and the audit trail |
+
+The API enforces this on every route ([backend/src/domain/permissions.ts](backend/src/domain/permissions.ts)); the screens only hide what a role cannot use.
+
 ## Database setup
 
-Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql).
+Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql), then [0002_roles.sql](database/migrations/0002_roles.sql) (adds the support-agent role).
 
 - **Tables:** `organizations`, `users`, `calls`, `call_utterances`, `audit_logs`, `pii_policy_settings`.
 - **JSONB columns:** `pii_counts`, `ai_summary` and audit `metadata`.
@@ -312,7 +326,13 @@ All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and 
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/api/voice-agent/session` | Single-use Voice Agent token plus the live agent's session config |
-| `POST` | `/api/voice-agent/sessions/:id/archive` | Fetch a finished live call's recording, run it through redaction, delete the AssemblyAI session → 202 |
+| `POST` | `/api/voice-agent/sessions/:id/archive` | Fetch a finished live call's recording, run it through redaction, delete the AssemblyAI session → 202 (optional `escalation.reason`) |
+| `GET` | `/api/follow-ups` | Calls the agent handed to a person and nobody has closed yet |
+| `POST` | `/api/calls/:id/follow-up/resolve` | Close an escalation (support agent or admin) |
+| `GET` | `/api/team` | People in the workspace, their roles, and an invite code for admins |
+| `POST` | `/api/team/invite` | New invite code (admin) |
+| `POST` | `/api/team/join` | Join the workspace an invite code points at, as a support agent |
+| `PATCH` | `/api/team/members/:userId` | Change someone's role (admin) |
 | `POST` | `/api/calls` | Upload a recording (multipart: `file`, `department`, `policy_preset`, `analysis_enabled`) → 202 |
 | `GET` | `/api/calls` | List calls (`status`, `department`, `sentiment`, `pii_type`, `from`, `to`, `page`, `page_size`) |
 | `GET` | `/api/calls/:id` | Safe archive: call, redacted utterances, audit events |
@@ -320,6 +340,7 @@ All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and 
 | `GET` | `/api/calls/:id/audit` | Audit trail for one call |
 | `POST` | `/api/calls/:id/retry` | Resume a failed call from the failed stage |
 | `DELETE` | `/api/calls/:id` | Delete a call and its safe audio (admin) |
+| `POST` | `/api/calls/:id/recheck-redaction` | Re-run redaction on a completed call and re-redact anything the first pass missed (admin) |
 | `GET` | `/api/search` | Full-text search over safe data (`q` + the list filters), with highlighted snippets |
 | `GET` | `/api/analytics` | Totals, PII by type, topics, sentiment, volume, processing time |
 | `GET` | `/api/audit` | Organization audit log (`call_id`, `event_type`, paging) |

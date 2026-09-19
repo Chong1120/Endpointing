@@ -122,6 +122,12 @@ export interface UserProfile {
 export interface UserRepository {
   /** Returns the user's profile, creating an organization for first-time users. */
   ensureProfile(userId: string, email: string, orgName: string): Promise<UserProfile>;
+  listForOrg(orgId: string): Promise<UserProfile[]>;
+  /** Changes a member's role. Returns null when the user is not in that organization. */
+  setRole(orgId: string, userId: string, role: UserRole): Promise<UserProfile | null>;
+  /** Moves a user into another organization (accepting an invite). */
+  moveToOrganization(userId: string, orgId: string, role: UserRole): Promise<UserProfile>;
+  findOrganization(orgId: string): Promise<{ id: string; name: string } | null>;
 }
 
 export interface PolicyRepository {

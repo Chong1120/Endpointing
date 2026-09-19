@@ -4,7 +4,8 @@ import { POLICY_PRESETS, type PolicyPreset } from '../domain/types.js';
 import { badRequest, notFound } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { parseInput } from '../http/validation.js';
-import { getAuth, requireRole } from '../middleware/auth.js';
+import { getAuth, requirePermission } from '../middleware/auth.js';
+import { permissionsFor } from '../domain/permissions.js';
 import { SUPPORTED_EXTENSIONS } from '../middleware/upload.js';
 import { intakeCall } from '../pipeline/intake.js';
 import {
@@ -34,7 +35,7 @@ export function settingsRouter(deps: AppDeps): Router {
   router.get('/me', (req, res) => {
     const auth = getAuth(req);
     res.json({
-      user: { id: auth.userId, email: auth.email, role: auth.role },
+      user: { id: auth.userId, email: auth.email, role: auth.role, permissions: permissionsFor(auth.role) },
       organization: { id: auth.orgId, name: auth.orgName },
       platform: {
         webhooks_enabled: deps.config.webhooksEnabled,
@@ -69,7 +70,7 @@ export function settingsRouter(deps: AppDeps): Router {
     });
   });
 
-  router.put('/policies/:preset', requireRole('admin'), async (req, res) => {
+  router.put('/policies/:preset', requirePermission('policies:write'), async (req, res) => {
     const auth = getAuth(req);
     const preset = presetParam(req.params.preset);
     const { policies } = parseInput(PolicyBodySchema, req.body);
@@ -87,7 +88,7 @@ export function settingsRouter(deps: AppDeps): Router {
     res.json({ preset, policies: unique, customized: true });
   });
 
-  router.delete('/policies/:preset', requireRole('admin'), async (req, res) => {
+  router.delete('/policies/:preset', requirePermission('policies:write'), async (req, res) => {
     const auth = getAuth(req);
     const preset = presetParam(req.params.preset);
     await deps.policies.deleteOverride(auth.orgId, preset);
@@ -100,7 +101,7 @@ export function settingsRouter(deps: AppDeps): Router {
   });
 
   // Runs a bundled synthetic recording through the real pipeline (real AssemblyAI calls).
-  router.post('/demo/samples/:id', async (req, res) => {
+  router.post('/demo/samples/:id', requirePermission('calls:upload'), async (req, res) => {
     const auth = getAuth(req);
     const sample = await deps.samples.get(String(req.params.id));
     if (!sample) throw notFound('Sample not found.');

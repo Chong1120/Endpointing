@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { UserProfile, UserRepository } from '../db/types.js';
+import { can, type Permission } from '../domain/permissions.js';
 import type { AuthContext, UserRole } from '../domain/types.js';
 import { forbidden, unauthorized } from '../errors.js';
 
@@ -66,10 +67,31 @@ function toIdentity(user: User): VerifiedIdentity {
   };
 }
 
-/** Verifies the bearer token and attaches the caller's organization context. */
-export function requireAuth(verifier: AuthVerifier, users: UserRepository): RequestHandler {
-  const profiles = new Map<string, { profile: UserProfile; expiresAt: number }>();
+/**
+ * Profiles are cached for a minute so every request doesn't hit the database.
+ * Joining a team or changing someone's role drops their entry, so the change
+ * takes effect on the next request instead of a minute later.
+ */
+export class ProfileCache {
+  private readonly entries = new Map<string, { profile: UserProfile; expiresAt: number }>();
 
+  get(userId: string): UserProfile | null {
+    const entry = this.entries.get(userId);
+    return entry && entry.expiresAt > Date.now() ? entry.profile : null;
+  }
+
+  set(profile: UserProfile) {
+    if (this.entries.size > 1_000) this.entries.clear();
+    this.entries.set(profile.userId, { profile, expiresAt: Date.now() + 60_000 });
+  }
+
+  invalidate(userId: string) {
+    this.entries.delete(userId);
+  }
+}
+
+/** Verifies the bearer token and attaches the caller's organization context. */
+export function requireAuth(verifier: AuthVerifier, users: UserRepository, profiles = new ProfileCache()): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction) => {
     const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '');
     if (!match?.[1]) throw unauthorized();
@@ -78,19 +100,12 @@ export function requireAuth(verifier: AuthVerifier, users: UserRepository): Requ
     if (!identity) throw unauthorized('Your session has expired. Please sign in again.');
 
     let profile = profiles.get(identity.userId);
-    if (!profile || profile.expiresAt < Date.now()) {
-      const loaded = await users.ensureProfile(identity.userId, identity.email, identity.orgName);
-      profile = { profile: loaded, expiresAt: Date.now() + 60_000 };
-      profiles.set(identity.userId, profile);
+    if (!profile) {
+      profile = await users.ensureProfile(identity.userId, identity.email, identity.orgName);
+      profiles.set(profile);
     }
 
-    req.auth = {
-      userId: profile.profile.userId,
-      email: profile.profile.email,
-      orgId: profile.profile.orgId,
-      orgName: profile.profile.orgName,
-      role: profile.profile.role,
-    };
+    req.auth = { userId: profile.userId, email: profile.email, orgId: profile.orgId, orgName: profile.orgName, role: profile.role };
     next();
   };
 }
@@ -100,9 +115,20 @@ export function getAuth(req: Request): AuthContext {
   return req.auth;
 }
 
-export function requireRole(...roles: UserRole[]): RequestHandler {
+/** Route guard for what a role may do; see domain/permissions.ts. */
+export function requirePermission(permission: Permission): RequestHandler {
   return (req, _res, next) => {
-    if (!roles.includes(getAuth(req).role)) throw forbidden();
+    if (!can(getAuth(req).role, permission)) throw forbidden(FORBIDDEN_MESSAGE[permission]);
     next();
   };
 }
+
+const FORBIDDEN_MESSAGE: Partial<Record<Permission, string>> = {
+  'calls:upload': 'Your role cannot add calls. Ask an admin to change your role.',
+  'calls:delete': 'Only an admin can delete a call.',
+  'calls:recheck': 'Only an admin can re-run redaction.',
+  'policies:write': 'Only an admin can change PII policies.',
+  export: 'Your role cannot export the safe dataset.',
+  'followups:resolve': 'Only a support agent or admin can close an escalation.',
+  'team:manage': 'Only an admin can manage the team.',
+};

@@ -3,12 +3,14 @@ import FileDownloadRounded from '@mui/icons-material/FileDownloadRounded';
 import TableChartRounded from '@mui/icons-material/TableChartRounded';
 import { Button, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material';
 import { useState } from 'react';
+import { useCan } from '../hooks/useMe';
 import { useNotify } from '../hooks/useNotify';
 import { api, ApiError, saveBlob } from '../services/api';
 import type { CallFilters } from '../services/types';
 
 /** Exports redacted utterances + AI analysis (never raw audio, raw text or PII). */
 export function ExportMenu({ filters = {}, variant = 'outlined' }: { filters?: CallFilters; variant?: 'outlined' | 'contained' }) {
+  const canExport = useCan('export');
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
   const notify = useNotify();
@@ -26,6 +28,8 @@ export function ExportMenu({ filters = {}, variant = 'outlined' }: { filters?: C
       setBusy(false);
     }
   }
+
+  if (!canExport) return null;
 
   return (
     <>

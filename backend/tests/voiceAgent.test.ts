@@ -50,6 +50,7 @@ describe('starting a live-agent call', () => {
       'list_recent_charges',
       'issue_refund',
       'update_contact_details',
+      'transfer_to_human',
     ]);
     expect(ctx.voiceAgent.tokenRequests).toEqual([{ expiresInSeconds: 120, maxSessionSeconds: 600 }]);
     expect(ctx.auditEvents.events.map((event) => event.event_type)).toContain('VOICE_SESSION_STARTED');
@@ -167,5 +168,43 @@ describe('Voice Agent REST client', () => {
 
     const down = new AssemblyAIVoiceAgentService({ apiKey: 'k', fetchImpl: (async () => new Response('busy', { status: 503 })) as unknown as typeof fetch });
     await expect(down.createToken({ expiresInSeconds: 60, maxSessionSeconds: 60 })).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe('handing a call to a person', () => {
+  it('queues the call for a human and closes it again when someone handles it', async () => {
+    const sessionId = await finishedCallFor('alice');
+    const archived = await request(app)
+      .post(`/api/voice-agent/sessions/${sessionId}/archive`)
+      .set(as('alice'))
+      .send({ escalation: { reason: 'upset_customer' } });
+    expect(archived.status).toBe(202);
+    expect(archived.body.follow_up).toBe('upset_customer');
+
+    const callId = archived.body.call.id;
+    const requested = ctx.auditEvents.events.find((event) => event.event_type === 'FOLLOW_UP_REQUESTED');
+    expect(requested?.metadata).toMatchObject({ reason: 'upset_customer', channel: 'live_agent' });
+
+    const queue = await request(app).get('/api/follow-ups').set(as('alice'));
+    expect(queue.status).toBe(200);
+    expect(queue.body.items).toHaveLength(1);
+    expect(queue.body.items[0]).toMatchObject({ id: callId, reason: 'upset_customer', department: 'AI Voice Agent' });
+
+    expect((await request(app).post(`/api/calls/${callId}/follow-up/resolve`).set(as('alice'))).status).toBe(204);
+    expect((await request(app).get('/api/follow-ups').set(as('alice'))).body.items).toEqual([]);
+  });
+
+  it('keeps the queue inside the organization and ignores anything but a known reason', async () => {
+    const sessionId = await finishedCallFor('alice');
+    const archived = await request(app)
+      .post(`/api/voice-agent/sessions/${sessionId}/archive`)
+      .set(as('alice'))
+      .send({ escalation: { reason: 'the caller said her card is 4111 1111 1111 1111' } });
+    expect(archived.body.follow_up).toBeNull();
+    expect(ctx.auditEvents.events.some((event) => event.event_type === 'FOLLOW_UP_REQUESTED')).toBe(false);
+    expect(JSON.stringify(ctx.auditEvents.events)).not.toContain('4111');
+
+    expect((await request(app).get('/api/follow-ups').set(as('bob'))).body.items).toEqual([]);
+    expect((await request(app).post(`/api/calls/${archived.body.call.id}/follow-up/resolve`).set(as('bob'))).status).toBe(404);
   });
 });

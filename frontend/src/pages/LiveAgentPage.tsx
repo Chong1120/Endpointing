@@ -139,7 +139,10 @@ export function LiveAgentPage() {
   const [limit, setLimit] = useState(600);
   const [hangingUp, setHangingUp] = useState(false);
   const [unarchived, setUnarchived] = useState<string | null>(null);
+  const [escalated, setEscalated] = useState(false);
   const callRef = useRef<LiveAgentCall | null>(null);
+  // Read when the call is archived, which can happen after the call object is gone.
+  const escalationRef = useRef<string | null>(null);
   const tokenRef = useRef<string | null>(null);
   const liveSince = useRef(0);
   const mounted = useRef(true);
@@ -154,7 +157,7 @@ export function LiveAgentPage() {
       callRef.current = null;
       const sessionId = call.sessionId;
       call.dispose();
-      if (sessionId && tokenRef.current) api.archiveLiveAgentCallOnExit(sessionId, tokenRef.current);
+      if (sessionId && tokenRef.current) api.archiveLiveAgentCallOnExit(sessionId, tokenRef.current, call.escalation);
     };
     window.addEventListener('pagehide', leave);
     return () => {
@@ -178,9 +181,13 @@ export function LiveAgentPage() {
     setStage('archiving');
     setUnarchived(sessionId);
     try {
-      const { call } = await api.archiveLiveAgentCall(sessionId);
+      const { call } = await api.archiveLiveAgentCall(sessionId, escalationRef.current);
       if (!mounted.current) return;
-      notify(`${call.reference} is being protected. Personal details are removed before anything is stored.`);
+      notify(
+        escalationRef.current
+          ? `${call.reference} is waiting for a person in Escalations. Personal details are removed before anything is stored.`
+          : `${call.reference} is being protected. Personal details are removed before anything is stored.`,
+      );
       navigate(`/calls/${call.id}/processing`);
     } catch (err) {
       if (!mounted.current) return;
@@ -195,6 +202,8 @@ export function LiveAgentPage() {
     setElapsed(0);
     setHangingUp(false);
     setUnarchived(null);
+    setEscalated(false);
+    escalationRef.current = null;
     setStage('connecting');
 
     const outcome = { failed: false };
@@ -204,7 +213,10 @@ export function LiveAgentPage() {
         setStage('live');
       },
       onSpeaking: setSpeaking,
-      onAction: (action) => setActions((current) => [action, ...current].slice(0, 20)),
+      onAction: (action) => {
+        if (action.tool === 'transfer_to_human') setEscalated(true);
+        setActions((current) => [action, ...current].slice(0, 20));
+      },
       onLevel: setLevel,
       onError: (message) => {
         outcome.failed = true;
@@ -244,6 +256,7 @@ export function LiveAgentPage() {
     const sessionId = await call.finished;
     if (callRef.current !== call) return; // Left the page: archived in the background.
     callRef.current = null;
+    escalationRef.current = call.escalation;
     setHangingUp(false);
     if (sessionId) await archive(sessionId);
     else setStage(outcome.failed ? 'failed' : 'idle');
@@ -338,6 +351,11 @@ export function LiveAgentPage() {
               </Typography>
             </Stack>
           </Card>
+          {escalated && !error && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              Sam is handing this call to a person. It joins the Escalations queue once the recording is redacted.
+            </Alert>
+          )}
           {error && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {error}

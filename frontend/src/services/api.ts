@@ -7,12 +7,16 @@ import type {
   CallDetail,
   CallFilters,
   CallListItem,
+  FollowUp,
   LiveAgentSession,
   Me,
   Paged,
   PoliciesResponse,
   PolicyPreset,
   Sample,
+  Team,
+  TeamMember,
+  UserRole,
 } from './types';
 
 export class ApiError extends Error {
@@ -115,15 +119,19 @@ async function exportDataset(format: 'jsonl' | 'csv', filters: CallFilters): Pro
 
 const archivePath = (sessionId: string) => `/api/voice-agent/sessions/${encodeURIComponent(sessionId)}/archive`;
 
+/** Only the reason is sent — never anything the caller said. */
+const archiveBody = (escalation?: string | null) => JSON.stringify(escalation ? { escalation: { reason: escalation } } : {});
+
 /**
  * Archives a live-agent call while the page is closing. `keepalive` lets the
  * request outlive the tab, and the API finishes the work even if nobody waits.
  */
-function archiveLiveAgentCallOnExit(sessionId: string, token: string) {
+function archiveLiveAgentCallOnExit(sessionId: string, token: string, escalation?: string | null) {
   void fetch(`${API_URL}${archivePath(sessionId)}`, {
     method: 'POST',
     keepalive: true,
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: archiveBody(escalation),
   }).catch(() => undefined);
 }
 
@@ -153,7 +161,19 @@ export const api = {
       body: JSON.stringify({ analysis_enabled: analysisEnabled }),
     }),
   startLiveAgent: () => request<LiveAgentSession>('/api/voice-agent/session', { method: 'POST' }),
-  archiveLiveAgentCall: (sessionId: string) => request<{ call: Call }>(archivePath(sessionId), { method: 'POST' }),
+  archiveLiveAgentCall: (sessionId: string, escalation?: string | null) =>
+    request<{ call: Call; follow_up: string | null }>(archivePath(sessionId), { method: 'POST', body: archiveBody(escalation) }),
+  followUps: () => request<{ items: FollowUp[]; total: number }>('/api/follow-ups'),
+  resolveFollowUp: (callId: string) => request<void>(`/api/calls/${callId}/follow-up/resolve`, { method: 'POST' }),
+  team: () => request<Team>('/api/team'),
+  inviteCode: () => request<{ code: string; valid_for_days: number }>('/api/team/invite', { method: 'POST' }),
+  joinTeam: (code: string) =>
+    request<{ organization: { id: string; name: string }; role: UserRole; calls_left_behind: number }>('/api/team/join', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  setMemberRole: (userId: string, role: UserRole) =>
+    request<{ member: TeamMember }>(`/api/team/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
   archiveLiveAgentCallOnExit,
   uploadCall,
   exportDataset,

@@ -63,6 +63,7 @@ sequenceDiagram
 - **Keys.** The browser gets a single-use token that must be redeemed within 2 minutes and caps the call at 10 minutes. The AssemblyAI API key never leaves the API.
 - **No live audio or transcript through SafeCall.** Audio flows between the browser and AssemblyAI. The page shows the call state and the agent's actions only; live transcript events are ignored because they are unredacted.
 - **Tools run in the browser** against mock Northwind data (`frontend/src/voice/northwindTools.ts`), so what a caller tells a tool never reaches the API.
+- **Handover to a person.** The `transfer_to_human` tool takes a reason and nothing else — no free text — so nothing the caller said can ride along. The browser passes the reason to the archive request, which records `FOLLOW_UP_REQUESTED`. The Escalations queue is derived from the audit trail: a call is open while it has a `FOLLOW_UP_REQUESTED` with no matching `FOLLOW_UP_RESOLVED`, so the handover needs no extra table and no extra state.
 - **Ownership without state.** The system prompt carries an HMAC of the organization id, keyed with the webhook secret. When archiving, the API reads the prompt back from AssemblyAI and checks it, so an organization can only archive its own calls, even across restarts.
 - **Same pipeline as uploads.** The stereo OGG recording (caller on the left, agent on the right) is archived like any upload: department `AI Voice Agent`, Contact Center policy, AI analysis on. Nothing in the live path bypasses redaction.
 - **AssemblyAI's copy is deleted.** The voice session holds an unredacted recording and conversation timeline, so it is deleted as soon as the transcription job has the audio. If the caller closes the tab mid-call, the page still sends the archive request with `fetch(…, { keepalive: true })`.
@@ -147,3 +148,9 @@ Model choice: `LLM_MODEL` (default `claude-opus-5`) is tried first. If the gatew
 ## Search
 
 `calls.search_vector` is a stored generated `tsvector` over the AI analysis, redacted transcript, department and filename, with a GIN index. `search_calls()` adds org-scoped filters and `ts_headline` snippets and is callable only by the service role.
+
+## Roles and workspaces
+
+`ensure_user_profile()` gives every new sign-in its own organization, with the person as admin. Teams form by invitation: an admin's code is `HMAC(webhook secret, org id)` plus an expiry, so it verifies without a table — nothing to store, nothing to leak, and rotating the secret revokes every outstanding code. Redeeming one moves the user row into that organization as a support agent; the calls they already uploaded stay behind in their old workspace, which is reported back so the UI can say so.
+
+Permissions live in one table (`backend/src/domain/permissions.ts`) and are applied by `requirePermission()` on each route. `/api/me` returns the caller's permission list, and the UI uses exactly that list to decide what to show, so the screens can never offer something the API will refuse. Profiles are cached for a minute in `ProfileCache`; joining a workspace or changing a role drops the affected entry, so the change applies on the very next request instead of a minute later.

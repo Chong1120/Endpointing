@@ -1,5 +1,5 @@
 import type { LiveAgentSession } from '../services/types';
-import { createNorthwindBackOffice, type AgentAction } from './northwindTools';
+import { createNorthwindBackOffice, type AgentAction, type EscalationReason } from './northwindTools';
 
 /**
  * Browser side of AssemblyAI's Voice Agent API (docs verified 2026-09-15).
@@ -112,6 +112,8 @@ function decodePcm16(base64: string) {
 export class LiveAgentCall {
   /** Set once AssemblyAI confirms the session; needed to archive the call. */
   sessionId: string | null = null;
+  /** Set when the agent hands the call to a person; sent with the archive request. */
+  escalation: EscalationReason | null = null;
   /** Resolves when the call is over, with the session id to archive (null if it never started). */
   readonly finished: Promise<string | null>;
 
@@ -295,6 +297,7 @@ export class LiveAgentCall {
   private runToolCall(message: Record<string, unknown>) {
     const args = message.arguments && typeof message.arguments === 'object' ? (message.arguments as Record<string, unknown>) : {};
     const outcome = this.runTool(String(message.name ?? ''), args);
+    if (outcome.escalation) this.escalation = outcome.escalation;
     this.actionCount += 1;
     this.events.onAction({ ...outcome.action, id: this.actionCount, at: new Date() });
     this.pendingResults.push({ call_id: String(message.call_id ?? ''), result: JSON.stringify(outcome.result), is_error: outcome.isError });

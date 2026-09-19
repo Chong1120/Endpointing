@@ -17,7 +17,7 @@ import type {
   UserProfile,
   UserRepository,
 } from '../../src/db/types.js';
-import type { AuditEvent, CallAnalysis, CallRecord, PolicyPreset, SafeText, Utterance } from '../../src/domain/types.js';
+import type { AuditEvent, CallAnalysis, CallRecord, PolicyPreset, SafeText, UserRole, Utterance } from '../../src/domain/types.js';
 import type { AppDeps } from '../../src/http/appDeps.js';
 import type { AuthVerifier, VerifiedIdentity } from '../../src/middleware/auth.js';
 import type { JobQueue, PollTranscriptJob, ProcessCallJob } from '../../src/queue/jobs.js';
@@ -250,6 +250,32 @@ export class InMemoryUserRepository implements UserRepository {
       this.profiles.set(userId, profile);
     }
     return profile;
+  }
+
+  async listForOrg(orgId: string) {
+    return [...this.profiles.values()].filter((profile) => profile.orgId === orgId);
+  }
+
+  async setRole(orgId: string, userId: string, role: UserRole) {
+    const profile = this.profiles.get(userId);
+    if (!profile || profile.orgId !== orgId) return null;
+    const updated = { ...profile, role };
+    this.profiles.set(userId, updated);
+    return updated;
+  }
+
+  async moveToOrganization(userId: string, orgId: string, role: UserRole) {
+    const profile = this.profiles.get(userId);
+    if (!profile) throw new Error('No such user.');
+    const target = [...this.profiles.values()].find((other) => other.orgId === orgId);
+    const updated = { ...profile, orgId, orgName: target?.orgName ?? profile.orgName, role };
+    this.profiles.set(userId, updated);
+    return updated;
+  }
+
+  async findOrganization(orgId: string) {
+    const member = [...this.profiles.values()].find((profile) => profile.orgId === orgId);
+    return member ? { id: orgId, name: member.orgName } : null;
   }
 }
 

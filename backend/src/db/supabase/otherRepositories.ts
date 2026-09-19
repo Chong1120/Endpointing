@@ -69,6 +69,59 @@ export class SupabaseUserRepository implements UserRepository {
     if (!row) throw new Error('User profile could not be created.');
     return { userId: row.user_id, email: row.email, orgId: row.organization_id, orgName: row.organization_name, role: row.role };
   }
+
+  async listForOrg(orgId: string): Promise<UserProfile[]> {
+    const { data, error } = await this.db
+      .from('users')
+      .select('id, email, role, organization_id, organizations(name)')
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: true });
+    assertNoError(error, 'reading team members');
+    return (data ?? []).map((row) => toProfile(row as MemberRow));
+  }
+
+  async setRole(orgId: string, userId: string, role: UserRole): Promise<UserProfile | null> {
+    const { data, error } = await this.db
+      .from('users')
+      .update({ role })
+      .eq('id', userId)
+      .eq('organization_id', orgId)
+      .select('id, email, role, organization_id, organizations(name)')
+      .maybeSingle();
+    assertNoError(error, 'changing a role');
+    return data ? toProfile(data as MemberRow) : null;
+  }
+
+  async moveToOrganization(userId: string, orgId: string, role: UserRole): Promise<UserProfile> {
+    const { data, error } = await this.db
+      .from('users')
+      .update({ organization_id: orgId, role })
+      .eq('id', userId)
+      .select('id, email, role, organization_id, organizations(name)')
+      .maybeSingle();
+    assertNoError(error, 'joining a team');
+    if (!data) throw new Error('The profile could not be moved.');
+    return toProfile(data as MemberRow);
+  }
+
+  async findOrganization(orgId: string): Promise<{ id: string; name: string } | null> {
+    const { data, error } = await this.db.from('organizations').select('id, name').eq('id', orgId).maybeSingle();
+    assertNoError(error, 'reading an organization');
+    return data ? { id: data.id as string, name: data.name as string } : null;
+  }
+}
+
+interface MemberRow {
+  id: string;
+  email: string;
+  role: UserRole;
+  organization_id: string;
+  organizations: { name: string } | { name: string }[] | null;
+}
+
+function toProfile(row: MemberRow): UserProfile {
+  const org = Array.isArray(row.organizations) ? row.organizations[0] : row.organizations;
+  return { userId: row.id, email: row.email, orgId: row.organization_id, orgName: org?.name ?? 'Organization', role: row.role };
 }
 
 export class SupabasePolicyRepository implements PolicyRepository {

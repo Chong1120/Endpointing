@@ -31,7 +31,7 @@ import { SafeAudioPlayer, type SafeAudioHandle } from '../components/SafeAudioPl
 import { StatusBadge } from '../components/StatusBadge';
 import { TranscriptView } from '../components/TranscriptView';
 import { useApiQuery } from '../hooks/useApiQuery';
-import { useMe } from '../hooks/useMe';
+import { useCan, useMe } from '../hooks/useMe';
 import { useNotify } from '../hooks/useNotify';
 import { api, ApiError } from '../services/api';
 import { brand } from '../theme';
@@ -56,6 +56,7 @@ function Fact({ label, value, ok }: { label: string; value: ReactNode; ok?: bool
 export function CallDetailPage() {
   const { id = '' } = useParams();
   const me = useMe();
+  const canDelete = useCan('calls:delete');
   const navigate = useNavigate();
   const notify = useNotify();
   const playerRef = useRef<SafeAudioHandle>(null);
@@ -132,7 +133,7 @@ export function CallDetailPage() {
                 Retry
               </Button>
             )}
-            {me?.user.role === 'admin' && !inProgress && (
+            {canDelete && !inProgress && (
               <Button variant="outlined" color="error" startIcon={<DeleteOutlineRounded />} onClick={() => setConfirmDelete(true)}>
                 Delete
               </Button>

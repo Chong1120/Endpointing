@@ -7,6 +7,16 @@
  * backend/src/services/assemblyai/liveAgent.ts.
  */
 
+export const ESCALATION_REASONS = ['customer_requested', 'upset_customer', 'out_of_scope', 'payment_issue'] as const;
+export type EscalationReason = (typeof ESCALATION_REASONS)[number];
+
+export const ESCALATION_LABELS: Record<EscalationReason, string> = {
+  customer_requested: 'Caller asked for a person',
+  upset_customer: 'Caller was still upset',
+  out_of_scope: 'Outside what the agent can do',
+  payment_issue: 'Payment matter',
+};
+
 export interface AgentAction {
   id: number;
   tool: string;
@@ -21,6 +31,8 @@ export interface ToolOutcome {
   result: unknown;
   isError: boolean;
   action: Omit<AgentAction, 'id' | 'at'>;
+  /** Set when the agent hands the call to a person. */
+  escalation?: EscalationReason;
 }
 
 interface Charge {
@@ -120,6 +132,18 @@ export function createNorthwindBackOffice(now = new Date()) {
           isError: false,
           result: { updated: true, field },
           action: { tool: name, label: field === 'email' ? 'Updated the email address' : 'Updated the mailing address', detail: 'New value not shown', ok: true },
+        };
+      }
+      case 'transfer_to_human': {
+        // Only the reason travels with the call: no free text, so nothing the
+        // caller said can ride along into the follow-up queue.
+        const asked = String(args.reason ?? '');
+        const reason = (ESCALATION_REASONS as readonly string[]).includes(asked) ? (asked as EscalationReason) : 'customer_requested';
+        return {
+          isError: false,
+          escalation: reason,
+          result: { transferred: true, callback_within: 'one business hour', tell_caller: 'A specialist will call you back within the hour.' },
+          action: { tool: name, label: 'Handed the call to a human', detail: ESCALATION_LABELS[reason], ok: true },
         };
       }
       default:

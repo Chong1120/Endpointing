@@ -103,6 +103,10 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
   VOICE_SESSION_STARTED: 'Live agent call started',
   VOICE_SESSION_DELETED: 'Voice session deleted from AssemblyAI',
   EXTRA_PII_REDACTED: 'Extra PII caught by SafeCall',
+  FOLLOW_UP_REQUESTED: 'Handed to a human',
+  FOLLOW_UP_RESOLVED: 'Escalation closed',
+  MEMBER_JOINED: 'Teammate joined the workspace',
+  MEMBER_ROLE_CHANGED: 'Role changed',
 };
 
 export const auditLabel = (type: string) => AUDIT_EVENT_LABELS[type] ?? type;
@@ -170,6 +174,14 @@ export function auditDetail(type: string, meta: Record<string, unknown>): string
       const where = meta.audio_updated ? 'transcript and audio re-redacted' : 'transcript masked';
       return `${entities} value${entities === 1 ? '' : 's'} the first pass missed · ${where}`;
     }
+    case 'FOLLOW_UP_REQUESTED':
+      return `${String(meta.reason ?? 'escalated').replace(/_/g, ' ')} · waiting for a specialist`;
+    case 'FOLLOW_UP_RESOLVED':
+      return `${String(meta.call_reference ?? '')} handled by a person`;
+    case 'MEMBER_JOINED':
+      return `Joined as ${String(meta.role ?? 'agent')}`;
+    case 'MEMBER_ROLE_CHANGED':
+      return `${String(meta.previous_role ?? '')} → ${String(meta.role ?? '')}`;
     default:
       return '';
   }

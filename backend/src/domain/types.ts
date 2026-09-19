@@ -16,7 +16,9 @@ export const DEPARTMENTS = [
 export const SENTIMENTS = ['positive', 'neutral', 'negative'] as const;
 export type Sentiment = (typeof SENTIMENTS)[number];
 
-export type UserRole = 'admin' | 'analyst' | 'viewer';
+/** admin runs the workspace · analyst studies the archive · agent works escalated calls · viewer only looks. */
+export const USER_ROLES = ['admin', 'analyst', 'agent', 'viewer'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
 
 declare const safeTextBrand: unique symbol;
 /**
@@ -124,6 +126,10 @@ export const AUDIT_EVENT_TYPES = [
   'VOICE_SESSION_STARTED',
   'VOICE_SESSION_DELETED',
   'EXTRA_PII_REDACTED',
+  'FOLLOW_UP_REQUESTED',
+  'FOLLOW_UP_RESOLVED',
+  'MEMBER_JOINED',
+  'MEMBER_ROLE_CHANGED',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 

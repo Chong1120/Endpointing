@@ -1,6 +1,7 @@
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Link as RouterLink, Navigate, Route, Routes, useLocation } from 'react-router';
+import { RequirePermission } from './components/common';
 import { useAuth } from './hooks/useAuth';
 import { AppLayout } from './layouts/AppLayout';
 import { LoginPage } from './pages/LoginPage';
@@ -11,6 +12,8 @@ const page = <K extends string>(load: () => Promise<Record<K, React.ComponentTyp
 
 const DashboardPage = page(() => import('./pages/DashboardPage'), 'DashboardPage');
 const LiveAgentPage = page(() => import('./pages/LiveAgentPage'), 'LiveAgentPage');
+const FollowUpsPage = page(() => import('./pages/FollowUpsPage'), 'FollowUpsPage');
+const TeamPage = page(() => import('./pages/TeamPage'), 'TeamPage');
 const UploadPage = page(() => import('./pages/UploadPage'), 'UploadPage');
 const CallsPage = page(() => import('./pages/CallsPage'), 'CallsPage');
 const CallDetailPage = page(() => import('./pages/CallDetailPage'), 'CallDetailPage');
@@ -60,14 +63,51 @@ export function App() {
           }
         >
           <Route index element={<DashboardPage />} />
-          <Route path="agent" element={<LiveAgentPage />} />
-          <Route path="upload" element={<UploadPage />} />
+          <Route
+            path="agent"
+            element={
+              <RequirePermission permission="agent:call">
+                <LiveAgentPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="escalations"
+            element={
+              <RequirePermission permission="followups:read">
+                <FollowUpsPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="upload"
+            element={
+              <RequirePermission permission="calls:upload">
+                <UploadPage />
+              </RequirePermission>
+            }
+          />
+          <Route path="team" element={<TeamPage />} />
           <Route path="calls" element={<CallsPage />} />
           <Route path="calls/:id" element={<CallDetailPage />} />
           <Route path="calls/:id/processing" element={<ProcessingPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="policies" element={<PoliciesPage />} />
-          <Route path="audit" element={<AuditPage />} />
+          <Route
+            path="policies"
+            element={
+              <RequirePermission permission="policies:write">
+                <PoliciesPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="audit"
+            element={
+              <RequirePermission permission="audit:read">
+                <AuditPage />
+              </RequirePermission>
+            }
+          />
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>

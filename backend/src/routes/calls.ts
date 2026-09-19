@@ -5,7 +5,7 @@ import { badRequest, conflict, notFound } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { presentCall } from '../http/presenters.js';
 import { CallQuerySchema, parseId, parseInput, toCallFilters } from '../http/validation.js';
-import { getAuth, requireRole } from '../middleware/auth.js';
+import { getAuth, requirePermission } from '../middleware/auth.js';
 import { createUploadMiddleware, sanitizeFilename } from '../middleware/upload.js';
 import { canRetry } from '../pipeline/failures.js';
 import { intakeCall, removeTempFile } from '../pipeline/intake.js';
@@ -26,7 +26,7 @@ export function callsRouter(deps: AppDeps): Router {
   const upload = createUploadMiddleware(deps.config);
 
   // Upload a recording -> temporary file -> AssemblyAI -> temp file deleted.
-  router.post('/', upload, async (req, res) => {
+  router.post('/', requirePermission('calls:upload'), upload, async (req, res) => {
     const auth = getAuth(req);
     const file = req.file;
     if (!file) throw badRequest('Choose an audio file to upload.');
@@ -109,7 +109,7 @@ export function callsRouter(deps: AppDeps): Router {
   });
 
   // Resume a failed pipeline from the stage that failed.
-  router.post('/:id/retry', async (req, res) => {
+  router.post('/:id/retry', requirePermission('calls:upload'), async (req, res) => {
     const auth = getAuth(req);
     const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
     if (!call) throw notFound('Call not found.');
@@ -131,7 +131,7 @@ export function callsRouter(deps: AppDeps): Router {
 
   // Re-scan an archived call for values AssemblyAI's redaction missed, and
   // redact them in the transcript and the recording.
-  router.post('/:id/recheck-redaction', requireRole('admin'), async (req, res) => {
+  router.post('/:id/recheck-redaction', requirePermission('calls:recheck'), async (req, res) => {
     const auth = getAuth(req);
     const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
     if (!call) throw notFound('Call not found.');
@@ -142,7 +142,7 @@ export function callsRouter(deps: AppDeps): Router {
     res.json({ ...result, call: presentCall(updated) });
   });
 
-  router.delete('/:id', requireRole('admin'), async (req, res) => {
+  router.delete('/:id', requirePermission('calls:delete'), async (req, res) => {
     const auth = getAuth(req);
     const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
     if (!call) throw notFound('Call not found.');

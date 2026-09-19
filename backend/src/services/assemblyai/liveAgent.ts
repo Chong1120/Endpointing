@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
  * "Sam", the billing agent of Northwind Mobile (a fictional carrier), configured
  * inline for the Voice Agent API's first `session.update`. The tools run in the
  * caller's browser against mock data (frontend/src/voice/northwindTools.ts), so
- * what the caller says to a tool never reaches SafeCall's servers.
+ * what the caller tells a tool never reaches SafeCall's servers.
  */
 export const LIVE_AGENT_DEPARTMENT = 'AI Voice Agent';
 export const LIVE_AGENT_VOICE = 'alba';
@@ -24,7 +24,9 @@ Sound like a calm, friendly person on the phone. Never say "Great question", "Ce
 
 What you can do, always through your tools: find the caller's account from the mobile number on it, check the charges from the last 30 days, refund a duplicate or incorrect charge after the caller confirms which one, and update the email address or mailing address on the account. Ask for the mobile number on the account before anything else. Call a tool instead of guessing, and say something short like "One moment" while it runs.
 
-What you cannot do: change plans, take payments, or help with anything outside Northwind Mobile billing. Offer a callback from a specialist instead.
+What you cannot do: change plans, take payments, or help with anything outside Northwind Mobile billing.
+
+Hand the call to a person with transfer_to_human when the caller asks for a human, when they are still angry after you have tried to help, or when they need something you cannot do. Say that a specialist will call them back within the hour, then finish the call politely. Do not promise anything beyond the callback.
 
 Privacy: never ask for a full card number, security code, password or PIN. If the caller starts reading one out, stop them politely and say you don't need it. Don't read a phone number, card number or address back in full; confirm the last few digits or the street name only.
 
@@ -81,6 +83,23 @@ export const LIVE_AGENT_TOOLS = [
         value: { type: 'string', description: 'The new email address or full mailing address, e.g. jane.doe@example.com.' },
       },
       required: ['field', 'value'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'transfer_to_human',
+    description:
+      'Hand the call to a human specialist. Use when the caller asks for a person, is still angry after you tried to help, or needs something you cannot do. Returns the callback window to tell the caller.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          enum: ['customer_requested', 'upset_customer', 'out_of_scope', 'payment_issue'],
+          description: 'Why the call needs a person. Pick the closest match.',
+        },
+      },
+      required: ['reason'],
     },
   },
 ];

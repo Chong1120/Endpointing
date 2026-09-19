@@ -5,7 +5,8 @@ import SentimentSatisfiedAltRounded from '@mui/icons-material/SentimentSatisfied
 import { Box, Card, CardContent, Chip, Stack, Typography, type SxProps, type Theme } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import type { ReactNode } from 'react';
-import type { Sentiment } from '../services/types';
+import { useMe } from '../hooks/useMe';
+import type { Permission, Sentiment, UserRole } from '../services/types';
 import { brand } from '../theme';
 import { entityLabel, numberFormat } from '../utils/format';
 
@@ -133,6 +134,29 @@ export function EmptyState({ icon, title, description, action }: { icon: ReactNo
       </Typography>
       {action && <Box sx={{ pt: 1 }}>{action}</Box>}
     </Stack>
+  );
+}
+
+const ROLE_NAMES: Record<UserRole, string> = {
+  admin: 'Admin',
+  analyst: 'Analyst',
+  agent: 'Support agent',
+  viewer: 'Viewer',
+};
+
+export const roleName = (role: UserRole) => ROLE_NAMES[role] ?? role;
+
+/** Hides a page from roles that may not use it. The API refuses them as well. */
+export function RequirePermission({ permission, children }: { permission: Permission; children: ReactNode }) {
+  const me = useMe();
+  if (!me) return null; // profile still loading
+  if (me.user.permissions.includes(permission)) return <>{children}</>;
+  return (
+    <EmptyState
+      icon={<LockRounded />}
+      title="Not part of your role"
+      description={`You are signed in as ${roleName(me.user.role).toLowerCase()}. Ask an admin in your workspace if you need this.`}
+    />
   );
 }
 

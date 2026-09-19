@@ -2,11 +2,13 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import type { AppDeps } from './http/appDeps.js';
-import { requireAuth } from './middleware/auth.js';
+import { ProfileCache, requireAuth } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { callsRouter } from './routes/calls.js';
+import { followUpsRouter } from './routes/followUps.js';
 import { insightsRouter } from './routes/insights.js';
 import { settingsRouter } from './routes/settings.js';
+import { teamRouter } from './routes/team.js';
 import { voiceAgentRouter } from './routes/voiceAgent.js';
 import { webhooksRouter } from './routes/webhooks.js';
 
@@ -37,11 +39,15 @@ export function createApp(deps: AppDeps): Express {
   // Server-to-server; authenticated with the shared header secret.
   app.use('/webhooks', webhooksRouter(deps));
 
+  // Shared with the team routes, so a role change or a join takes effect at once.
+  const profiles = new ProfileCache();
   const api = express.Router();
   api.use(express.json({ limit: '256kb' }));
-  api.use(requireAuth(deps.authVerifier, deps.users));
+  api.use(requireAuth(deps.authVerifier, deps.users, profiles));
   api.use('/calls', callsRouter(deps));
   api.use(insightsRouter(deps));
+  api.use(followUpsRouter(deps));
+  api.use(teamRouter(deps, profiles));
   api.use(settingsRouter(deps));
   api.use('/voice-agent', voiceAgentRouter(deps));
 

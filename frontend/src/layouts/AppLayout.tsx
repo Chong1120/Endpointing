@@ -6,7 +6,9 @@ import InsightsRounded from '@mui/icons-material/InsightsRounded';
 import LogoutRounded from '@mui/icons-material/LogoutRounded';
 import MenuRounded from '@mui/icons-material/MenuRounded';
 import PolicyRounded from '@mui/icons-material/PolicyRounded';
+import GroupsRounded from '@mui/icons-material/GroupsRounded';
 import SpaceDashboardRounded from '@mui/icons-material/SpaceDashboardRounded';
+import SupportAgentRounded from '@mui/icons-material/SupportAgentRounded';
 import {
   Alert,
   Avatar,
@@ -29,19 +31,22 @@ import { Logo } from '../components/Logo';
 import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../hooks/useAuth';
 import { MeContext } from '../hooks/useMe';
+import type { Permission } from '../services/types';
 import { api } from '../services/api';
 import { brand } from '../theme';
 
 const DRAWER_WIDTH = 252;
 
-const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean }> = [
+const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean; permission?: Permission }> = [
   { to: '/', label: 'Dashboard', icon: <SpaceDashboardRounded />, end: true },
-  { to: '/agent', label: 'Live agent', icon: <HeadsetMicRounded /> },
-  { to: '/upload', label: 'Upload call', icon: <CloudUploadRounded /> },
+  { to: '/agent', label: 'Live agent', icon: <HeadsetMicRounded />, permission: 'agent:call' },
+  { to: '/escalations', label: 'Escalations', icon: <SupportAgentRounded />, permission: 'followups:read' },
+  { to: '/upload', label: 'Upload call', icon: <CloudUploadRounded />, permission: 'calls:upload' },
   { to: '/calls', label: 'Calls & search', icon: <ForumRounded /> },
   { to: '/analytics', label: 'Analytics', icon: <InsightsRounded /> },
-  { to: '/policies', label: 'PII policies', icon: <PolicyRounded /> },
-  { to: '/audit', label: 'Audit trail', icon: <FactCheckRounded /> },
+  { to: '/policies', label: 'PII policies', icon: <PolicyRounded />, permission: 'policies:write' },
+  { to: '/audit', label: 'Audit trail', icon: <FactCheckRounded />, permission: 'audit:read' },
+  { to: '/team', label: 'Team', icon: <GroupsRounded /> },
 ];
 
 export function AppLayout() {
@@ -59,7 +64,7 @@ export function AppLayout() {
         <Logo inverted />
       </Box>
       <List component="nav" sx={{ px: 1.5, flex: 1 }} aria-label="Main">
-        {NAV.map((item) => {
+        {NAV.filter((item) => !item.permission || (me.data?.user.permissions ?? []).includes(item.permission)).map((item) => {
           const active = item.end ? location.pathname === item.to : location.pathname.startsWith(item.to);
           return (
             <ListItemButton

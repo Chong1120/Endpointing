@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AUDIT_EVENT_TYPES } from '../domain/types.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { CallQuerySchema, parseInput, toCallFilters } from '../http/validation.js';
-import { getAuth } from '../middleware/auth.js';
+import { getAuth, requirePermission } from '../middleware/auth.js';
 import { computeAnalytics } from '../services/analytics.js';
 import { buildSafeExport, toCsv, toJsonl } from '../services/export.js';
 
@@ -53,7 +53,7 @@ export function insightsRouter(deps: AppDeps): Router {
     res.json(computeAnalytics(await deps.calls.listForAnalytics(auth.orgId)));
   });
 
-  router.get('/audit', async (req, res) => {
+  router.get('/audit', requirePermission('audit:read'), async (req, res) => {
     const auth = getAuth(req);
     const query = parseInput(AuditQuerySchema, req.query);
     const { items, total } = await deps.auditEvents.listForOrg(auth.orgId, {
@@ -65,7 +65,7 @@ export function insightsRouter(deps: AppDeps): Router {
     res.json({ items, total, page: query.page, page_size: query.page_size });
   });
 
-  router.get('/export', async (req, res) => {
+  router.get('/export', requirePermission('export'), async (req, res) => {
     const auth = getAuth(req);
     const query = parseInput(ExportQuerySchema, req.query);
     const filters = toCallFilters({ ...query, page: 1, page_size: 100 });
