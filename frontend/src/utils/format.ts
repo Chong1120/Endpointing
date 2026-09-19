@@ -102,6 +102,7 @@ export const AUDIT_EVENT_LABELS: Record<string, string> = {
   CALL_DELETED: 'Call deleted',
   VOICE_SESSION_STARTED: 'Live agent call started',
   VOICE_SESSION_DELETED: 'Voice session deleted from AssemblyAI',
+  EXTRA_PII_REDACTED: 'Extra PII caught by SafeCall',
 };
 
 export const auditLabel = (type: string) => AUDIT_EVENT_LABELS[type] ?? type;
@@ -164,6 +165,11 @@ export function auditDetail(type: string, meta: Record<string, unknown>): string
       return `Voice Agent API · voice ${String(meta.voice ?? '')} · up to ${Math.round((n('max_session_seconds') ?? 0) / 60)} min`;
     case 'VOICE_SESSION_DELETED':
       return 'Unredacted recording and conversation removed from AssemblyAI';
+    case 'EXTRA_PII_REDACTED': {
+      const entities = n('entities') ?? 0;
+      const where = meta.audio_updated ? 'transcript and audio re-redacted' : 'transcript masked';
+      return `${entities} value${entities === 1 ? '' : 's'} the first pass missed · ${where}`;
+    }
     default:
       return '';
   }

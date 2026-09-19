@@ -22,13 +22,21 @@ interface RedactPiiAudioOptions {
   override_audio_redaction_method?: 'silence';
   return_redacted_no_speech_audio?: boolean;
 }
-export type SafeCallTranscriptParams = TranscriptParams & { redact_pii_audio_options?: RedactPiiAudioOptions };
+export type SafeCallTranscriptParams = TranscriptParams & {
+  redact_pii_audio_options?: RedactPiiAudioOptions;
+  redact_static_entities?: Record<string, string[]>;
+};
 
 export interface SubmitRequest {
   audioUrl: string;
   policies: PiiPolicyName[];
   redactedAudioFormat: 'mp3' | 'wav';
   webhook: { url: string; secret: string } | null;
+  /**
+   * Exact terms a first pass left in the transcript. AssemblyAI redacts them
+   * wherever they appear, in the text and in the redacted audio.
+   */
+  staticEntities?: Record<string, string[]>;
 }
 
 export type TranscriptResult =
@@ -75,6 +83,9 @@ export function buildTranscriptParams(request: SubmitRequest): SafeCallTranscrip
       override_audio_redaction_method: 'silence',
       return_redacted_no_speech_audio: true,
     },
+    ...(request.staticEntities && Object.keys(request.staticEntities).length > 0
+      ? { redact_static_entities: request.staticEntities }
+      : {}),
     ...(request.webhook
       ? {
           webhook_url: request.webhook.url,

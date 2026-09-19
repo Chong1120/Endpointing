@@ -9,6 +9,7 @@ import { getAuth, requireRole } from '../middleware/auth.js';
 import { createUploadMiddleware, sanitizeFilename } from '../middleware/upload.js';
 import { canRetry } from '../pipeline/failures.js';
 import { intakeCall, removeTempFile } from '../pipeline/intake.js';
+import { recheckRedaction } from '../pipeline/redactionRecheck.js';
 import { resolvePolicies } from '../services/assemblyai/policies.js';
 
 const UploadFieldsSchema = z.object({
@@ -126,6 +127,19 @@ export function callsRouter(deps: AppDeps): Router {
     const updated = await deps.calls.update(call.id, { status: 'PROCESSING', failed_stage: null, error_message: null });
     await deps.queue.requeueProcessCall({ callId: call.id, transcriptId: call.assemblyai_transcript_id, trigger: 'retry' });
     res.status(202).json({ call: presentCall(updated) });
+  });
+
+  // Re-scan an archived call for values AssemblyAI's redaction missed, and
+  // redact them in the transcript and the recording.
+  router.post('/:id/recheck-redaction', requireRole('admin'), async (req, res) => {
+    const auth = getAuth(req);
+    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    if (!call) throw notFound('Call not found.');
+    if (call.status !== 'COMPLETED') throw conflict('Only archived calls can be rechecked.');
+
+    const result = await recheckRedaction(deps, call);
+    const updated = (await deps.calls.findById(auth.orgId, call.id)) ?? call;
+    res.json({ ...result, call: presentCall(updated) });
   });
 
   router.delete('/:id', requireRole('admin'), async (req, res) => {

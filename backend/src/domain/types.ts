@@ -123,6 +123,7 @@ export const AUDIT_EVENT_TYPES = [
   'CALL_DELETED',
   'VOICE_SESSION_STARTED',
   'VOICE_SESSION_DELETED',
+  'EXTRA_PII_REDACTED',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 

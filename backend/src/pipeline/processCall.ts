@@ -8,6 +8,7 @@ import { countPiiMarkers, countRedactionMarkers, summarizePii } from '../service
 import { AUDIO_CONTENT_TYPES, buildSafeAudioPath } from '../services/storage/safeAudioStorage.js';
 import { nowIso, sleepFor, type PipelineDeps } from './deps.js';
 import { describeError, markCallFailed } from './failures.js';
+import { recheckRedaction } from './redactionRecheck.js';
 
 export type ProcessOutcome = 'completed' | 'skipped' | 'failed';
 
@@ -241,6 +242,16 @@ async function runStages(
     ai_analysis: Boolean(call.ai_summary),
     processing_seconds: Math.max(0, Math.round((Date.parse(processedAt) - Date.parse(call.created_at)) / 1000)),
   });
+
+  // 6. Second opinion on the redaction. Anything AssemblyAI left in the
+  //    transcript is redacted again, in the text and in the audio. Best effort:
+  //    the archive is already complete, so a failure here never fails the call.
+  try {
+    const recheck = await recheckRedaction(deps, call);
+    if (recheck.found > 0) deps.logger.info({ callId: call.id, ...recheck }, 'redaction rechecked after archiving');
+  } catch (error) {
+    deps.logger.warn({ callId: call.id, err: describeError(error) }, 'redaction recheck failed');
+  }
 }
 
 async function waitForRedactedAudio(deps: PipelineDeps, transcriptId: string): Promise<string> {
