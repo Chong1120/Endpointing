@@ -37,9 +37,81 @@ export interface ToolOutcome {
 
 interface Charge {
   charge_id: string;
-  date: string;
+  /** Days before today, so charges always look recent. */
+  daysAgo: number;
   amount_usd: number;
   description: string;
+  /** Some charges a support agent has to look at; the agent must say so and offer a person. */
+  refundable?: false;
+}
+
+interface Account {
+  plan: string;
+  monthly_price_usd: number;
+  account_status: 'active' | 'past_due' | 'suspended';
+  customer_since: number;
+  charges: Charge[];
+}
+
+/**
+ * Four accounts, so two people trying the demo do not hear the same call.
+ * The mobile number picks one, always the same one for the same number.
+ */
+const ACCOUNTS: Account[] = [
+  {
+    // The classic: billed twice on the same day.
+    plan: 'Unlimited Plus',
+    monthly_price_usd: 45,
+    account_status: 'active',
+    customer_since: 2021,
+    charges: [
+      { charge_id: 'CHG-2041', daysAgo: 12, amount_usd: 45, description: 'Monthly plan, Unlimited Plus' },
+      { charge_id: 'CHG-2043', daysAgo: 12, amount_usd: 45, description: 'Monthly plan, Unlimited Plus, charged a second time on the same day' },
+      { charge_id: 'CHG-2019', daysAgo: 26, amount_usd: 12.5, description: 'International roaming day pass' },
+    ],
+  },
+  {
+    // Roaming the caller says they never used.
+    plan: 'Unlimited Family, 3 lines',
+    monthly_price_usd: 95,
+    account_status: 'active',
+    customer_since: 2019,
+    charges: [
+      { charge_id: 'CHG-5510', daysAgo: 8, amount_usd: 95, description: 'Monthly plan, Unlimited Family' },
+      { charge_id: 'CHG-5533', daysAgo: 6, amount_usd: 60, description: 'International roaming, 4 day passes on line 2' },
+      { charge_id: 'CHG-5540', daysAgo: 3, amount_usd: 9.99, description: 'Device protection, line 3' },
+    ],
+  },
+  {
+    // A late fee after a missed payment: the plan change is out of scope, the fee is not.
+    plan: 'Essential 20 GB',
+    monthly_price_usd: 30,
+    account_status: 'past_due',
+    customer_since: 2023,
+    charges: [
+      { charge_id: 'CHG-7702', daysAgo: 18, amount_usd: 30, description: 'Monthly plan, Essential 20 GB' },
+      { charge_id: 'CHG-7715', daysAgo: 11, amount_usd: 10, description: 'Late payment fee' },
+      { charge_id: 'CHG-7721', daysAgo: 4, amount_usd: 25, description: 'Data top-up, 10 GB' },
+    ],
+  },
+  {
+    // Suspended after a failed payment: a person has to restore the line.
+    plan: 'Prepaid 10 GB',
+    monthly_price_usd: 20,
+    account_status: 'suspended',
+    customer_since: 2024,
+    charges: [
+      { charge_id: 'CHG-9104', daysAgo: 21, amount_usd: 20, description: 'Monthly plan, Prepaid 10 GB' },
+      { charge_id: 'CHG-9119', daysAgo: 9, amount_usd: 20, description: 'Retry of the failed monthly payment', refundable: false },
+    ],
+  },
+];
+
+/** Same number, same account, every time. The demo number in the UI picks the duplicate-charge account. */
+function accountFor(digits: string): Account {
+  if (digits.endsWith('5550142')) return ACCOUNTS[0]!;
+  const sum = [...digits].reduce((total, digit) => total + Number(digit), 0);
+  return ACCOUNTS[sum % ACCOUNTS.length]!;
 }
 
 const isoDate = (date: Date) =>
@@ -56,14 +128,14 @@ function failure(tool: string, label: string, error: string): ToolOutcome {
 
 /** One back office per call: it remembers the account and refunds for that call only. */
 export function createNorthwindBackOffice(now = new Date()) {
-  const firstOfMonth = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
-  const charges: Charge[] = [
-    { charge_id: 'CHG-2041', date: firstOfMonth, amount_usd: 45, description: 'Monthly plan, Unlimited Plus' },
-    { charge_id: 'CHG-2043', date: firstOfMonth, amount_usd: 45, description: 'Monthly plan, Unlimited Plus, charged a second time on the same day' },
-    { charge_id: 'CHG-2019', date: isoDate(new Date(now.getFullYear(), now.getMonth() - 1, 14)), amount_usd: 12.5, description: 'International roaming day pass' },
-  ];
   const refunds = new Map<string, string>();
-  let accountFound = false;
+  let account: Account | null = null;
+
+  const dated = (charge: Charge) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - charge.daysAgo);
+    return { charge_id: charge.charge_id, date: isoDate(date), amount_usd: charge.amount_usd, description: charge.description };
+  };
 
   const noAccount = (tool: string) =>
     failure(tool, 'Asked for the account first', 'No account is selected yet. Ask for the mobile number on the account and call lookup_account first.');
@@ -75,30 +147,43 @@ export function createNorthwindBackOffice(now = new Date()) {
         if (digits.length < 7) {
           return failure(name, 'Account lookup needs the full number', 'The number seems incomplete. Ask the caller for the full mobile number on the account.');
         }
-        accountFound = true;
+        account = accountFor(digits);
         return {
           isError: false,
-          result: { found: true, account_status: 'active', plan: 'Unlimited Plus', monthly_price_usd: 45, customer_since: 2021 },
-          action: { tool: name, label: 'Found the account', detail: 'Unlimited Plus plan · active', ok: true },
+          result: {
+            found: true,
+            account_status: account.account_status,
+            plan: account.plan,
+            monthly_price_usd: account.monthly_price_usd,
+            customer_since: account.customer_since,
+          },
+          action: { tool: name, label: 'Found the account', detail: `${account.plan} · ${account.account_status.replace('_', ' ')}`, ok: true },
         };
       }
       case 'list_recent_charges': {
-        if (!accountFound) return noAccount(name);
+        if (!account) return noAccount(name);
         return {
           isError: false,
-          result: { charges: charges.map((charge) => ({ ...charge, refunded: refunds.has(charge.charge_id) })) },
-          action: { tool: name, label: 'Checked recent charges', detail: `${charges.length} charges in the last 30 days`, ok: true },
+          result: { charges: account.charges.map((charge) => ({ ...dated(charge), refunded: refunds.has(charge.charge_id) })) },
+          action: { tool: name, label: 'Checked recent charges', detail: `${account.charges.length} charges in the last 30 days`, ok: true },
         };
       }
       case 'issue_refund': {
-        if (!accountFound) return noAccount(name);
+        if (!account) return noAccount(name);
         const id = String(args.charge_id ?? '').trim().toUpperCase();
-        const charge = charges.find((candidate) => candidate.charge_id === id);
+        const charge = account.charges.find((candidate) => candidate.charge_id === id);
         if (!charge) {
           return failure(
             name,
             'Refund needs a valid charge',
-            `There is no charge ${id || 'with that id'}. The charge ids are ${charges.map((c) => c.charge_id).join(', ')}. Ask the caller which charge to refund.`,
+            `There is no charge ${id || 'with that id'}. The charge ids are ${account.charges.map((c) => c.charge_id).join(', ')}. Ask the caller which charge to refund.`,
+          );
+        }
+        if (charge.refundable === false) {
+          return failure(
+            name,
+            'Charge needs a person',
+            'This charge cannot be refunded from your tools. Tell the caller a specialist has to review it, and use transfer_to_human with reason payment_issue.',
           );
         }
         const existing = refunds.get(charge.charge_id);
@@ -118,7 +203,7 @@ export function createNorthwindBackOffice(now = new Date()) {
         };
       }
       case 'update_contact_details': {
-        if (!accountFound) return noAccount(name);
+        if (!account) return noAccount(name);
         const field = args.field === 'email' || args.field === 'mailing_address' ? args.field : null;
         const value = String(args.value ?? '').trim();
         if (!field) return failure(name, 'Contact update needs a field', 'Say whether the email address or the mailing address should change.');

@@ -28,6 +28,7 @@ const SCRIPT = [
   'The number on my account is 415 555 0142.',
   'Yes, please refund the second charge.',
   'Can you also change my email to jane.doe@example.com?',
+  'Actually, can I speak to a real person about this?',
 ];
 
 const ripple = keyframes`
