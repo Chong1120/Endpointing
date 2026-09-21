@@ -133,7 +133,7 @@ All parameters were checked against the live docs ([agent instructions](https://
 | `GET /v1/token` | The API mints a single-use token (`expires_in_seconds=120`, `max_session_duration_seconds=600`). The browser never sees the API key. |
 | `wss://agents.assemblyai.com/v1/ws?token=…` | The browser streams microphone audio as PCM16 mono 24 kHz (`input.audio`) and plays `reply.audio`. |
 | `session.update` | Inline agent: system prompt, greeting, voice `alba`, `language_codes: ["en"]`, keyterms, turn detection (`min_silence` 1400 ms, `max_silence` 4000 ms, barge-in on) and four JSON-Schema function tools. |
-| `tool.call` → `tool.result` | Tools run in the browser against mock Northwind data. Results go back when `reply.done` is the latest event. |
+| `tool.call` → `tool.result` | Tools run in the browser against mock Northwind data. Results go back as soon as no reply is being generated — not only when `reply.done` was the very last event, or a cough during the lookup would leave the agent waiting. |
 | `reply.done` with `interrupted` | Queued agent audio is flushed when the caller barges in. |
 | `session.end` | Sent before the socket closes, so the 30-second resume window isn't billed. |
 | `GET /v1/sessions/{id}` | After the call, the API checks the organization reference in the session's system prompt and waits for the stereo OGG recording. |

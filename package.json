@@ -8,7 +8,7 @@
     "install:all": "npm --prefix backend install && npm --prefix frontend install",
     "db:migrate": "npm --prefix backend run db:migrate",
     "dev": "concurrently -n api,web -c cyan,green \"npm --prefix backend run dev:api\" \"npm --prefix frontend run dev\"",
-    "test": "npm --prefix backend test",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
     "samples:generate": "powershell -ExecutionPolicy Bypass -File backend/samples/generate-samples.ps1"

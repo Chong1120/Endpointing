@@ -6,7 +6,7 @@ import { createNorthwindBackOffice, type AgentAction, type EscalationReason } fr
  * Audio is PCM16 mono at 24 kHz, base64-encoded, over the WebSocket.
  * - `input.audio` is only sent after `session.ready`.
  * - Barge-in: queued playback is flushed when `reply.done` reports "interrupted".
- * - `tool.result` goes out when `reply.done` is the latest event.
+ * - `tool.result` goes out as soon as no reply is being generated (see sendToolResults).
  * - `session.end` is sent before closing, so the 30-second resume window isn't billed.
  * The AudioContext runs at the device rate and the capture worklet resamples to
  * 24 kHz: a forced 24 kHz context loses echo cancellation in Firefox and is
@@ -16,6 +16,8 @@ import { createNorthwindBackOffice, type AgentAction, type EscalationReason } fr
 
 const RATE = 24_000;
 const CHUNK_SAMPLES = 1_200; // 50 ms of audio per input.audio message
+/** Last resort for a tool result the reply.done handler never got to send. */
+const TOOL_RESULT_DEADLINE_MS = 6_000;
 
 export interface SpeakingState {
   caller: boolean;
@@ -137,8 +139,9 @@ export class LiveAgentCall {
   private hangupTimer: number | null = null;
   private readonly playing = new Set<AudioBufferSourceNode>();
   private nextStartTime = 0;
-  private lastEvent = '';
+  private replyInFlight = false;
   private pendingResults: Array<{ call_id: string; result: string; is_error: boolean }> = [];
+  private toolTimer: number | null = null;
   private speaking: SpeakingState = { caller: false, agent: false };
   private fatalMessage: string | null = null;
   private actionCount = 0;
@@ -254,23 +257,22 @@ export class LiveAgentCall {
         this.events.onLive();
         break;
       case 'input.speech.started':
-        this.lastEvent = 'input.speech.started';
         this.setSpeaking({ caller: true });
         break;
       case 'input.speech.stopped':
         this.setSpeaking({ caller: false });
         break;
       case 'reply.started':
-        this.lastEvent = 'reply.started';
+        this.replyInFlight = true;
         break;
       case 'reply.audio':
         if (typeof message.data === 'string') this.play(message.data);
         break;
       case 'reply.done':
-        this.lastEvent = 'reply.done';
+        this.replyInFlight = false;
         if (message.status === 'interrupted') {
           this.flushPlayback();
-          this.pendingResults = [];
+          this.dropPendingResults();
         } else {
           this.sendToolResults();
         }
@@ -302,13 +304,38 @@ export class LiveAgentCall {
     this.events.onAction({ ...outcome.action, id: this.actionCount, at: new Date() });
     this.pendingResults.push({ call_id: String(message.call_id ?? ''), result: JSON.stringify(outcome.result), is_error: outcome.isError });
     this.sendToolResults();
+    // A reply that never reports done would strand the result and leave the
+    // agent waiting in silence, so send it anyway after a long pause.
+    if (this.pendingResults.length > 0 && this.toolTimer === null) {
+      this.toolTimer = window.setTimeout(() => {
+        this.toolTimer = null;
+        this.replyInFlight = false;
+        this.sendToolResults();
+      }, TOOL_RESULT_DEADLINE_MS);
+    }
   }
 
+  /**
+   * The docs say to send a tool result "when reply.done is the latest event".
+   * What that guards against is answering in the middle of a reply, so the gate
+   * here is "no reply is being generated" rather than "nothing at all has
+   * happened since". Any sound while a tool runs — a cough, a "hello?" — raises
+   * input.speech.started, and treating that as a reason to hold the result left
+   * the agent waiting for something that never came: silent until the caller
+   * prompted it again.
+   */
   private sendToolResults() {
     const ws = this.ws;
-    if (this.lastEvent !== 'reply.done' || this.pendingResults.length === 0 || !ws || ws.readyState !== WebSocket.OPEN) return;
-    for (const result of this.pendingResults) ws.send(JSON.stringify({ type: 'tool.result', ...result }));
+    if (this.replyInFlight || this.pendingResults.length === 0 || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const results = this.pendingResults;
+    this.dropPendingResults();
+    for (const result of results) ws.send(JSON.stringify({ type: 'tool.result', ...result }));
+  }
+
+  private dropPendingResults() {
     this.pendingResults = [];
+    if (this.toolTimer !== null) window.clearTimeout(this.toolTimer);
+    this.toolTimer = null;
   }
 
   private play(base64: string) {
@@ -381,6 +408,7 @@ export class LiveAgentCall {
     this.hangupTimer = null;
     this.levelTimer = null;
     this.ready = false;
+    this.dropPendingResults();
     this.flushPlayback();
     const ws = this.ws;
     this.ws = null;
