@@ -18,6 +18,14 @@ const RATE = 24_000;
 const CHUNK_SAMPLES = 1_200; // 50 ms of audio per input.audio message
 /** Last resort for a tool result the reply.done handler never got to send. */
 const TOOL_RESULT_DEADLINE_MS = 6_000;
+/**
+ * How long the agent may owe the caller an answer before we ask it to carry on
+ * with `reply.create`. The API sometimes ends a turn without speaking - usually
+ * around a tool call - and the caller is left in silence until they prompt it
+ * themselves. This is that prompt, sent for them.
+ */
+const AGENT_SILENCE_MS = 7_000;
+const MAX_NUDGES_PER_TURN = 2;
 
 export interface SpeakingState {
   caller: boolean;
@@ -142,6 +150,18 @@ export class LiveAgentCall {
   private replyInFlight = false;
   private pendingResults: Array<{ call_id: string; result: string; is_error: boolean }> = [];
   private toolTimer: number | null = null;
+  private silenceTimer: number | null = null;
+  private lastActivityAt = Date.now();
+  /**
+   * Event order, not wall clock: the agent owes a reply from the moment the
+   * caller stops talking or a tool result goes out, and has paid it the moment
+   * it speaks again.
+   */
+  private eventSeq = 0;
+  private owedSeq = 0;
+  private agentSpokeSeq = 0;
+  private nudges = 0;
+  private hadFirstTurn = false;
   private speaking: SpeakingState = { caller: false, agent: false };
   private fatalMessage: string | null = null;
   private actionCount = 0;
@@ -216,6 +236,8 @@ export class LiveAgentCall {
     this.ws = ws;
     ws.onopen = () => ws.send(JSON.stringify({ type: 'session.update', session: session.session }));
     ws.onmessage = (event) => this.handle(event.data);
+    this.lastActivityAt = Date.now();
+    this.silenceTimer = window.setInterval(() => this.nudgeIfStalled(), 1_000);
     ws.onclose = () =>
       this.finish(this.fatalMessage ?? (this.sessionId ? null : 'The connection to the voice agent closed before the call started.'));
   }
@@ -250,6 +272,9 @@ export class LiveAgentCall {
     } catch {
       return;
     }
+    // Anything at all from the server counts as the call being alive; the
+    // watchdog below only fires once it has gone completely quiet.
+    this.lastActivityAt = Date.now();
     switch (message.type) {
       case 'session.ready':
         this.ready = true;
@@ -257,19 +282,23 @@ export class LiveAgentCall {
         this.events.onLive();
         break;
       case 'input.speech.started':
+        this.nudges = 0; // a new turn: the agent gets its patience back
         this.setSpeaking({ caller: true });
         break;
       case 'input.speech.stopped':
+        this.owedSeq = ++this.eventSeq;
         this.setSpeaking({ caller: false });
         break;
       case 'reply.started':
         this.replyInFlight = true;
         break;
       case 'reply.audio':
+        this.agentSpokeSeq = ++this.eventSeq;
         if (typeof message.data === 'string') this.play(message.data);
         break;
       case 'reply.done':
         this.replyInFlight = false;
+        this.hadFirstTurn = true;
         if (message.status === 'interrupted') {
           this.flushPlayback();
           this.dropPendingResults();
@@ -330,6 +359,26 @@ export class LiveAgentCall {
     const results = this.pendingResults;
     this.dropPendingResults();
     for (const result of results) ws.send(JSON.stringify({ type: 'tool.result', ...result }));
+    this.lastActivityAt = Date.now();
+    this.owedSeq = ++this.eventSeq; // the agent now owes the caller what the tool found
+  }
+
+  /**
+   * Asks the agent to carry on when it owes an answer and has gone quiet. The
+   * debt starts when the caller stops speaking or when a tool result goes out,
+   * and is cleared the moment the agent says anything: an agent that has just
+   * asked a question is waiting for the caller, and prodding it there makes it
+   * answer its own question and act on the answer.
+   */
+  private nudgeIfStalled() {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.ready || !this.hadFirstTurn) return;
+    if (this.replyInFlight || this.speaking.caller || this.pendingResults.length > 0) return;
+    if (this.agentSpokeSeq > this.owedSeq) return; // it has already spoken its piece
+    if (this.nudges >= MAX_NUDGES_PER_TURN || Date.now() - this.lastActivityAt < AGENT_SILENCE_MS) return;
+    this.nudges += 1;
+    this.lastActivityAt = Date.now();
+    ws.send(JSON.stringify({ type: 'reply.create' }));
   }
 
   private dropPendingResults() {
@@ -405,8 +454,10 @@ export class LiveAgentCall {
   private teardown() {
     if (this.hangupTimer !== null) window.clearTimeout(this.hangupTimer);
     if (this.levelTimer !== null) window.clearInterval(this.levelTimer);
+    if (this.silenceTimer !== null) window.clearInterval(this.silenceTimer);
     this.hangupTimer = null;
     this.levelTimer = null;
+    this.silenceTimer = null;
     this.ready = false;
     this.dropPendingResults();
     this.flushPlayback();

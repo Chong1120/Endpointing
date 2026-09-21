@@ -84,6 +84,101 @@ describe('answering a tool call', () => {
     }
   });
 
+  it('asks the agent to carry on when it goes quiet owing an answer', () => {
+    // The API sometimes ends a turn around a tool call without speaking. The
+    // caller shouldn't have to say "are you still there?" to restart it.
+    vi.useFakeTimers();
+    try {
+      const nudge = () => (call as unknown as { nudgeIfStalled(): void }).nudgeIfStalled();
+      drive({ type: 'reply.started' }, { type: 'reply.done', status: 'completed' });
+      drive({ type: 'input.speech.started' }, { type: 'input.speech.stopped' }); // caller asked something
+
+      vi.advanceTimersByTime(4_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toEqual([]); // too soon
+
+      vi.advanceTimersByTime(4_000);
+      nudge();
+      nudge();
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toHaveLength(1); // once per silence
+
+      vi.advanceTimersByTime(8_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toHaveLength(2);
+
+      vi.advanceTimersByTime(8_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toHaveLength(2); // then it gives up
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never talks over the caller or an agent that is already speaking', () => {
+    vi.useFakeTimers();
+    try {
+      const nudge = () => (call as unknown as { nudgeIfStalled(): void }).nudgeIfStalled();
+      drive({ type: 'reply.started' }, { type: 'reply.done', status: 'completed' }, { type: 'input.speech.started' });
+      vi.advanceTimersByTime(20_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toEqual([]); // caller is talking
+
+      drive({ type: 'input.speech.stopped' }, { type: 'reply.started' });
+      vi.advanceTimersByTime(20_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toEqual([]); // agent is talking
+
+      drive({ type: 'reply.done', status: 'completed' }, TOOL_CALL, { type: 'reply.started' });
+      vi.advanceTimersByTime(20_000);
+      nudge();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toEqual([]); // a result is still owed
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves the agent alone when it has asked the caller a question', () => {
+    // Prodding it here made it answer its own question and act on the answer -
+    // in one recorded session, issuing a refund nobody had agreed to.
+    vi.useFakeTimers();
+    try {
+      drive(
+        { type: 'input.speech.started' },
+        { type: 'input.speech.stopped' },
+        { type: 'reply.started' },
+        { type: 'reply.audio', data: '' },
+        { type: 'reply.done', status: 'completed' },
+      );
+      vi.advanceTimersByTime(30_000);
+      (call as unknown as { nudgeIfStalled(): void }).nudgeIfStalled();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does prod it when the tool result landed after the last thing it said', () => {
+    vi.useFakeTimers();
+    try {
+      drive(
+        { type: 'input.speech.started' },
+        { type: 'input.speech.stopped' },
+        { type: 'reply.started' },
+        { type: 'reply.audio', data: '' }, // "one moment"
+        TOOL_CALL,
+        { type: 'reply.done', status: 'completed' }, // result goes out here
+      );
+      expect(toolResults()).toHaveLength(1);
+
+      vi.advanceTimersByTime(8_000); // ...and then nothing
+      (call as unknown as { nudgeIfStalled(): void }).nudgeIfStalled();
+      expect(socket.sent.filter((m) => m.type === 'reply.create')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('never sends the same result twice', () => {
     drive({ type: 'reply.started' }, TOOL_CALL, { type: 'reply.done', status: 'completed' });
     drive({ type: 'reply.started' }, { type: 'reply.done', status: 'completed' });
