@@ -8,7 +8,7 @@ Built for the **AssemblyAI Voice Agent Hackathon (lablab.ai, September 2026)**.
 
 > **Disclaimer.** SafeCall is a hackathon prototype demonstrating privacy-oriented call-data processing. Automated PII detection/redaction should not be represented as a universal legal-compliance certification or a substitute for an organization's legal, security, privacy, and governance controls.
 
-![Call detail](docs/screenshots/05-call-detail.png)
+![Call detail](docs/screenshots/07-call-detail.png)
 
 ---
 
@@ -341,15 +341,23 @@ All sample data is synthetic: 555-01xx phone numbers, `example.com` emails, and 
 
 ## Screenshots
 
+**The three ways in**
+
 | | |
 | --- | --- |
-| ![Login](docs/screenshots/01-login.png) Login | ![Dashboard](docs/screenshots/02-dashboard.png) Dashboard |
-| ![Upload](docs/screenshots/03-upload.png) Upload | ![Processing](docs/screenshots/04-processing.png) Processing |
-| ![Call detail](docs/screenshots/05-call-detail.png) Safe archive | ![Search](docs/screenshots/06-search.png) Search |
-| ![Analytics](docs/screenshots/07-analytics.png) Analytics | ![Policies](docs/screenshots/08-policies.png) Policies |
-| ![Audit](docs/screenshots/09-audit.png) Audit trail | |
+| ![Login](docs/screenshots/01-login.png) Sign in, or enter as one of the three roles | ![Customer](docs/screenshots/02-customer.png) The customer: a phone line and their own calls |
+| ![Escalations](docs/screenshots/03-escalations.png) The support agent: calls the AI handed over | ![Dashboard](docs/screenshots/04-dashboard.png) The admin console |
 
-These are the staff console. To regenerate them against a running instance: `cd frontend; $env:SAFECALL_EMAIL="…"; $env:SAFECALL_PASSWORD="…"; node scripts/screenshots.mjs` (uses the installed Microsoft Edge).
+**The console**
+
+| | |
+| --- | --- |
+| ![Live agent](docs/screenshots/05-live-agent.png) Live agent | ![Upload](docs/screenshots/06-upload.png) Upload |
+| ![Call detail](docs/screenshots/07-call-detail.png) Safe archive | ![Search](docs/screenshots/08-search.png) Search |
+| ![Analytics](docs/screenshots/09-analytics.png) Analytics | ![Policies](docs/screenshots/10-policies.png) PII policies |
+| ![Audit](docs/screenshots/11-audit.png) Audit trail | ![Team](docs/screenshots/12-team.png) Team |
+
+To regenerate them against a running instance: `cd frontend; node scripts/screenshots.mjs` (uses the installed Microsoft Edge). It signs in through the demo logins, so no credentials are needed, and it masks the workspace's invite code before capturing the Team page.
 
 ## API endpoints
 

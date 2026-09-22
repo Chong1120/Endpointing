@@ -77,6 +77,7 @@ function FollowUpRow({ item, onResolved }: { item: FollowUp; onResolved: (id: st
 }
 
 export function FollowUpsPage() {
+  const canCall = useCan('agent:call');
   const queue = useApiQuery(() => api.followUps(), [], { poll: 20_000 });
   const items = queue.data?.items ?? [];
 
@@ -88,9 +89,11 @@ export function FollowUpsPage() {
         title="Escalations"
         subtitle="Calls the AI agent handed to a person. Only the reason travels with the call — the transcript here is already redacted."
         actions={
-          <Button component={RouterLink} to="/agent" variant="outlined" startIcon={<HeadsetMicRounded />}>
-            Live agent
-          </Button>
+          canCall ? (
+            <Button component={RouterLink} to="/agent" variant="outlined" startIcon={<HeadsetMicRounded />}>
+              Live agent
+            </Button>
+          ) : undefined
         }
       />
       {queue.error && (

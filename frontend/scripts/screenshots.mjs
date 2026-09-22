@@ -3,11 +3,14 @@
  * installed Chromium-based browser (Microsoft Edge by default — no browser
  * download needed).
  *
- *   SAFECALL_EMAIL=demo@northwind.example SAFECALL_PASSWORD=... node scripts/screenshots.mjs
+ *   node scripts/screenshots.mjs
  *
- * Env: SAFECALL_URL (default http://127.0.0.1:5173), SAFECALL_CALL_ID (optional,
- * otherwise the first archived call is used), BROWSER_CHANNEL (msedge | chrome),
- * OUT_DIR (default ../docs/screenshots).
+ * It signs in through the one-click demo logins, so no credentials are needed,
+ * and walks all three roles: the customer's line, the support agent's queue and
+ * the admin console.
+ *
+ * Env: SAFECALL_URL (default http://127.0.0.1:5173), BROWSER_CHANNEL
+ * (msedge | chrome), OUT_DIR (default ../docs/screenshots).
  */
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -15,13 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const baseUrl = (process.env.SAFECALL_URL ?? 'http://127.0.0.1:5173').replace(/\/$/, '');
-const email = process.env.SAFECALL_EMAIL;
-const password = process.env.SAFECALL_PASSWORD;
 const outDir = process.env.OUT_DIR ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/screenshots');
-if (!email || !password) {
-  console.error('Set SAFECALL_EMAIL and SAFECALL_PASSWORD');
-  process.exit(1);
-}
 
 await mkdir(outDir, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? 'msedge', headless: true });
@@ -30,24 +27,59 @@ page.on('pageerror', (error) => console.error('page error:', error.message));
 
 async function shot(name, { fullPage = true } = {}) {
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(700);
   const file = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: file, fullPage });
   console.log('saved', file);
 }
 
+const heading = (name) => page.getByRole('heading', { name, exact: true }).first().waitFor();
+
+/** Signs out by dropping the stored session, so the next persona starts clean. */
+async function enterAs(label) {
+  await page.goto(`${baseUrl}/login`);
+  await page.evaluate(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      /* private mode */
+    }
+  });
+  await page.goto(`${baseUrl}/login`);
+  const button = page.getByRole('button', { name: new RegExp(`Enter as ${label}`, 'i') });
+  await button.waitFor();
+  await button.click();
+  await page.waitForURL(`${baseUrl}/`, { timeout: 30_000 });
+}
+
+// 1. The way in: three roles, one click each.
 await page.goto(`${baseUrl}/login`);
+await page.getByRole('button', { name: /Enter as Customer/i }).waitFor();
 await shot('01-login', { fullPage: false });
-await page.getByLabel('Work email').fill(email);
-await page.getByLabel('Password').fill(password);
-await page.getByRole('button', { name: /sign in securely/i }).click();
-await page.waitForURL(`${baseUrl}/`);
-await page.getByRole('heading', { name: 'Recent calls' }).waitFor();
-await shot('02-dashboard');
+
+// 2. The customer: a phone line and their own calls. No console.
+await enterAs('Customer');
+await heading('Talk to us about your bill');
+await shot('02-customer');
+
+// 3. The support agent: the queue the AI hands over to.
+await enterAs('Support agent');
+await heading('Escalations');
+await shot('03-escalations');
+
+// 4-11. The admin console.
+await enterAs('Admin');
+await heading('Recent calls');
+await shot('04-dashboard');
+
+await page.goto(`${baseUrl}/agent`);
+await heading('Live agent');
+await shot('05-live-agent');
 
 await page.goto(`${baseUrl}/upload`);
 await page.getByText('Drag & drop a call recording').waitFor();
-await shot('03-upload');
+await shot('06-upload');
 
 let callId = process.env.SAFECALL_CALL_ID;
 if (!callId) {
@@ -57,32 +89,35 @@ if (!callId) {
   callId = page.url().split('/').pop();
 }
 
-const heading = (name) => page.getByRole('heading', { name, exact: true }).first().waitFor();
-
-await page.goto(`${baseUrl}/calls/${callId}/processing`);
-await heading('Pipeline');
-await shot('04-processing');
-
 await page.goto(`${baseUrl}/calls/${callId}`);
 await heading('Redacted transcript');
 await heading('Safe recording');
-await shot('05-call-detail');
+await shot('07-call-detail');
 
-await page.goto(`${baseUrl}/calls?q=card`);
+await page.goto(`${baseUrl}/calls?q=refund`);
 await heading('Calls & search');
-await page.waitForTimeout(800);
-await shot('06-search');
+await page.waitForTimeout(900);
+await shot('08-search');
 
 await page.goto(`${baseUrl}/analytics`);
 await heading('Call volume');
-await shot('07-analytics');
+await shot('09-analytics');
 
 await page.goto(`${baseUrl}/policies`);
 await heading('PII policies');
-await shot('08-policies');
+await shot('10-policies');
 
 await page.goto(`${baseUrl}/audit`);
 await heading('Audit trail');
-await shot('09-audit');
+await shot('11-audit');
+
+await page.goto(`${baseUrl}/team`);
+await heading('Team');
+// The invite code is live for seven days, so it does not belong in a public screenshot.
+await page.evaluate(() => {
+  const field = document.querySelector('input[readonly]');
+  if (field) field.value = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.XXXXX.XXXXXXXXXXXXXXXX';
+});
+await shot('12-team');
 
 await browser.close();

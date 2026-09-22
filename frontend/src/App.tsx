@@ -65,7 +65,10 @@ function Home() {
   const me = useMe();
   if (!me) return <FullPageSpinner />;
   if (me.user.role === 'customer') return <CustomerHomePage />;
-  if (!me.user.permissions.includes('analytics:read') && me.user.permissions.includes('followups:read')) return <FollowUpsPage />;
+  // Redirect rather than render, so the sidebar highlights where they actually are.
+  if (!me.user.permissions.includes('analytics:read') && me.user.permissions.includes('followups:read')) {
+    return <Navigate to="/escalations" replace />;
+  }
   return <DashboardPage />;
 }
 

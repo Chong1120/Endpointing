@@ -37,7 +37,7 @@ import { brand } from '../theme';
 const DRAWER_WIDTH = 252;
 
 const NAV: Array<{ to: string; label: string; icon: ReactNode; end?: boolean; permission?: Permission }> = [
-  { to: '/', label: 'Dashboard', icon: <SpaceDashboardRounded />, end: true },
+  { to: '/', label: 'Dashboard', icon: <SpaceDashboardRounded />, end: true, permission: 'calls:browse' },
   { to: '/agent', label: 'Live agent', icon: <HeadsetMicRounded />, permission: 'agent:call' },
   { to: '/escalations', label: 'Escalations', icon: <SupportAgentRounded />, permission: 'followups:read' },
   { to: '/upload', label: 'Upload call', icon: <CloudUploadRounded />, permission: 'calls:upload' },
