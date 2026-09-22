@@ -19,7 +19,7 @@ flowchart LR
 
 | Piece | Hosted on | Responsibility |
 | --- | --- | --- |
-| **Website** (`frontend/`) | Vercel | Sign-in, the live agent call, upload, live processing view, safe archive, search, analytics, policies, audit. It talks to the API, and during a live call to AssemblyAI's Voice Agent WebSocket; never to tables or storage directly. |
+| **Website** (`frontend/`) | Vercel | Two applications behind one sign-in, chosen by role: the customer's phone line, and the staff console (upload, live processing view, safe archive, search, analytics, policies, audit, team). It talks to the API, and during a live call to AssemblyAI's Voice Agent WebSocket; never to tables or storage directly. |
 | **API** (`backend/`) | Railway | The only server. Checks sign-ins and scopes everything to the caller's organization. Receives uploads, calls AssemblyAI, receives the webhook, runs the background pipeline, issues signed audio URLs, and serves search, analytics and export. |
 | **Database, logins, storage** (`database/migrations/`) | Supabase | Postgres tables (`organizations`, `users`, `calls`, `call_utterances`, `audit_logs`, `pii_policy_settings`), full-text search over safe data, Supabase Auth, and the private `safe-call-audio` bucket. RLS is enabled with no anon/auth policies. |
 
@@ -38,7 +38,7 @@ This design assumes **one API instance**. To scale horizontally, reintroduce a s
 
 ## Live agent (Voice Agent API)
 
-The **Live agent** page lets anyone in the organization call "Sam", a billing agent for the fictional Northwind Mobile, built on AssemblyAI's Voice Agent API. The conversation is live and two-way; SafeCall only acts before and after it.
+A customer — and an admin trying the product — can call "Sam", a billing agent for the fictional Northwind Mobile, built on AssemblyAI's Voice Agent API. The conversation is live and two-way; SafeCall only acts before and after it.
 
 ```mermaid
 sequenceDiagram
@@ -150,22 +150,28 @@ Model choice: `LLM_MODEL` (default `claude-opus-5`) is tried first. If the gatew
 
 `calls.search_vector` is a stored generated `tsvector` over the AI analysis, redacted transcript, department and filename, with a GIN index. `search_calls()` adds org-scoped filters and `ts_headline` snippets and is callable only by the service role.
 
-## Roles and workspaces
+## Roles, workspaces and who sees what
 
 `ensure_user_profile()` gives every new sign-in its own organization, with the person as admin. Teams form by invitation: an admin's code is `HMAC(webhook secret, org id)` plus an expiry, so it verifies without a table — nothing to store, nothing to leak, and rotating the secret revokes every outstanding code. Redeeming one moves the user row into that organization as a support agent; the calls they already uploaded stay behind in their old workspace, which is reported back so the UI can say so.
 
-Permissions live in one table (`backend/src/domain/permissions.ts`) and are applied by `requirePermission()` on each route. `/api/me` returns the caller's permission list, and the UI uses exactly that list to decide what to show, so the screens can never offer something the API will refuse. Profiles are cached for a minute in `ProfileCache`; joining a workspace or changing a role drops the affected entry, so the change applies on the very next request instead of a minute later.
+Permissions live in one table (`backend/src/domain/permissions.ts`), applied by `requirePermission()` on each route. `/api/me` returns the caller's list, and the UI decides what to show from exactly that list, so a screen can never offer something the API will refuse. Profiles are cached for a minute in `ProfileCache`; joining a workspace or changing a role drops the affected entry, so the change applies on the very next request instead of a minute later.
 
-## Who sees what
+Three permissions do the narrowing that matters. `calls:browse` gates the archive and search and `analytics:read` the analytics, so a support agent can open the calls in their queue without being handed the whole workspace; the same role has no `agent:call`, because an agent phoning the AI agent it takes handovers from would be a strange product. And `calls:read` means "may read calls" while `calls:read:all` means "may read everyone's".
 
-Roles are not decoration: `requirePermission()` guards each route from one table (`backend/src/domain/permissions.ts`), and `/api/me` hands the same list to the browser so the screens can never offer what the API will refuse. Two permissions do the narrowing that matters: `calls:browse` gates the archive and search, and `analytics:read` the analytics, so a support agent can open the calls in their queue without being handed the whole workspace. The same role has no `agent:call` — an agent phoning the AI agent it takes handovers from would be a strange demo, and a strange product.
-
-A customer is the one role that is not staff, and it needs more than hidden buttons. `calls:read` means "may read calls"; `calls:read:all` means "may read everyone's". A customer has only the first, so `GET /api/calls` filters on `created_by` and every single-call route (detail, audio URL, audit) reports another person's call as **not found** rather than forbidden — the response should not confirm that it exists. Search, analytics, export and the audit log are closed to them outright, since those are workspace-wide by nature.
-
-The customer also gets a different application: `CustomerLayout` is Northwind Mobile's own support page, with no console navigation, and the call archive they see is their own history. SafeCall appears only as the line explaining that personal details are removed before anything is stored.
+A customer has only the first, which is what makes them safe to let in. `GET /api/calls` filters on `created_by`, and every single-call route (detail, audio URL, audit) reports another person's call as **not found** rather than forbidden — the response should not confirm that it exists. Search, analytics, export and the audit log are closed to them outright, being workspace-wide by nature. They also get a different application: `CustomerLayout` has no console navigation, the list shows their own calls without opening any of them, and finishing a call leaves them on their own page rather than the staff pipeline view.
 
 ## The demo workspace
 
 Three accounts — customer, support agent, admin — share one organization named `Northwind Mobile (demo)`, so a call made as the customer appears in the agent's queue and the admin's audit trail. It is built on the first demo sign-in and repaired on every one, which means a visitor who changes a role cannot spoil it for the next.
 
 Passwords are derived with `HMAC(webhook secret, email)` and used only on the server: `POST /api/demo/login` signs in with Supabase's admin API and returns a session, so nothing secret reaches the browser and there is no password to leak from the bundle. Rotating the secret rotates all three. Three things keep a public login from being expensive or destructive: sign-ins are rate limited per IP, a workspace may start at most 50 live calls a day (counted from `VOICE_SESSION_STARTED` audit events), and the demo admin has a **Reset demo** button that clears the calls, restores the three roles and reseeds. Seeding runs the bundled synthetic recordings through the real pipeline — nothing in the demo bypasses redaction.
+
+## Catching what the first pass misses
+
+AssemblyAI's redaction is strong but not complete: a phone number said with a stumble in the middle, or "the security code is one two three", can come back in the clear. Two calls in testing did exactly that, which is why every archived call gets a second look.
+
+`services/redactionCheck.ts` re-scans the redacted transcript with a deliberately conservative set of patterns — CVVs introduced by a phrase, account numbers, national identifiers, emails (including "jane dot doe at example dot com"), phone numbers and card-length digit runs — skipping anything already inside a `[LABEL]` and anything that reads like a date. Finding nothing, which is the usual case, ends it there.
+
+When it does find something, `pipeline/redactionRecheck.ts` sends the stored recording back to AssemblyAI with those exact strings as `redact_static_entities`, which redacts them in the transcript and bleeps them in the audio. The transcript, utterances, audio file, PII counts and AI summary are all replaced with the cleaner result, and `EXTRA_PII_REDACTED` records what was caught — labels and counts, never the values. If the re-transcription cannot run, the text is masked in place instead, so the leak is closed either way.
+
+Counts are merged rather than overwritten (`mergedCounts`). A second pass cannot see what the first one already silenced, so taking its numbers alone would quietly *lower* a call's PII total; the merge keeps the higher of the two per entity type and adds what the recheck found.

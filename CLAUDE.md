@@ -20,7 +20,7 @@ Three hosted pieces only: website on Vercel, one API app on Railway, Supabase (P
 Background work runs inside the API process (`backend/src/queue/backgroundQueue.ts`); the database is the source of truth and `sweepCalls` resumes interrupted calls, so run a single API instance.
 
 ## Layout
-- `backend/src/pipeline/` — intake (upload → AssemblyAI) and `processCall` (webhook-triggered, idempotent, resumable stages)
+- `backend/src/pipeline/` — intake (upload → AssemblyAI), `processCall` (webhook-triggered, idempotent, resumable stages) and `redactionRecheck` (second pass over an archived call, using `redact_static_entities`)
 - `backend/src/services/assemblyai/` — request builder, safe-transcript conversion, verified PII policy names
 - `backend/src/routes/` — REST API + `/webhooks/assemblyai`
 - `backend/src/domain/permissions.ts` — role → permission table; routes guard with `requirePermission()` and `/api/me` returns the list the UI hides by
@@ -28,4 +28,5 @@ Background work runs inside the API process (`backend/src/queue/backgroundQueue.
 - `frontend/src/` — React + MUI: `layouts/AppLayout` is the staff console, `layouts/CustomerLayout` is the customer's own page; `App.tsx` picks one by role
 
 ## Commands
-- `npm test` (backend, Vitest; AssemblyAI is mocked) · `npm run typecheck` · `npm run dev`
+- `npm test` (both suites: API with AssemblyAI mocked, plus the browser voice client) · `npm run typecheck` · `npm run dev` (API + website)
+- `npm run db:migrate` needs `DATABASE_URL`; migrations 0002 and 0003 add the support-agent and customer roles, and must be applied before roles can be saved.
