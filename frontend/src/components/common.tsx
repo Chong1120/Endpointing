@@ -142,6 +142,7 @@ const ROLE_NAMES: Record<UserRole, string> = {
   analyst: 'Analyst',
   agent: 'Support agent',
   viewer: 'Viewer',
+  customer: 'Customer',
 };
 
 export const roleName = (role: UserRole) => ROLE_NAMES[role] ?? role;

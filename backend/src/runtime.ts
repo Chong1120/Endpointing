@@ -17,6 +17,7 @@ import { AssemblyAITranscriptionService } from './services/assemblyai/transcript
 import { AssemblyAIVoiceAgentService } from './services/assemblyai/voiceAgent.js';
 import { RepositoryAuditLogger } from './services/audit.js';
 import { LlmGatewayAnalysisService } from './services/llm/analysis.js';
+import { SupabaseDemoAccountService } from './services/demoAccounts.js';
 import { FileSampleCatalog } from './services/samples.js';
 import { SupabaseSafeAudioStorage } from './services/storage/safeAudioStorage.js';
 
@@ -52,6 +53,8 @@ export function buildRuntime(config: AppConfig, serviceName = 'safecall-api') {
     users: new SupabaseUserRepository(db),
     policies: new SupabasePolicyRepository(db),
     authVerifier: new SupabaseAuthVerifier(db),
+    demoAccounts: new SupabaseDemoAccountService(db, config.supabase.url, config.supabase.serviceRoleKey),
+    demoSeeding: true,
     samples: new FileSampleCatalog(),
   };
   queue.attach(deps);

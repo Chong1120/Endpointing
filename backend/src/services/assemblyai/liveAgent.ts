@@ -12,6 +12,8 @@ export const LIVE_AGENT_VOICE = 'alba';
 export const LIVE_AGENT_TOKEN_TTL_SECONDS = 120;
 /** Per-call cap enforced by AssemblyAI; keeps demo usage small. */
 export const LIVE_AGENT_MAX_SESSION_SECONDS = 600;
+/** Live calls one workspace may start in a day. The demo logins are public, and calls cost money. */
+export const LIVE_CALLS_PER_DAY = 50;
 
 export const LIVE_AGENT_GREETING =
   "Thanks for calling Northwind Mobile, this is Sam. This call is recorded, and your personal details are removed before it's stored. How can I help?";

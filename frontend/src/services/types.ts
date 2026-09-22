@@ -5,6 +5,8 @@ export type Sentiment = 'positive' | 'neutral' | 'negative';
 export const DEPARTMENTS = ['Customer Support', 'Billing', 'Technical Support', 'Collections', 'Sales', 'General Inquiry'];
 /** Department recorded on calls taken by the live agent. */
 export const LIVE_AGENT_DEPARTMENT = 'AI Voice Agent';
+/** Matches DEMO_ORG_NAME in backend/src/domain/demo.ts. */
+export const DEMO_ORG_NAME = 'Northwind Mobile (demo)';
 /** Filter choices: the upload departments plus live-agent calls. */
 export const FILTER_DEPARTMENTS = [...DEPARTMENTS, LIVE_AGENT_DEPARTMENT];
 
@@ -118,20 +120,31 @@ export interface CallDetail {
   audit: AuditEvent[];
 }
 
-export type UserRole = 'admin' | 'analyst' | 'agent' | 'viewer';
+export type UserRole = 'admin' | 'analyst' | 'agent' | 'viewer' | 'customer';
 
 export type Permission =
   | 'calls:read'
+  | 'calls:read:all'
+  | 'calls:browse'
   | 'calls:upload'
   | 'calls:delete'
   | 'calls:recheck'
+  | 'analytics:read'
   | 'policies:write'
   | 'export'
   | 'audit:read'
   | 'followups:read'
   | 'followups:resolve'
   | 'agent:call'
+  | 'team:read'
   | 'team:manage';
+
+export interface DemoPersona {
+  key: 'customer' | 'agent' | 'admin';
+  label: string;
+  blurb: string;
+  role: UserRole;
+}
 
 export interface TeamMember {
   id: string;

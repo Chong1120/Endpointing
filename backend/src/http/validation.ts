@@ -47,8 +47,9 @@ function nextDay(date: string): string {
   return d.toISOString();
 }
 
-export function toCallFilters(query: CallQuery): CallFilters {
+export function toCallFilters(query: CallQuery, createdBy?: string): CallFilters {
   return {
+    createdBy,
     status: query.status,
     department: query.department,
     sentiment: query.sentiment,

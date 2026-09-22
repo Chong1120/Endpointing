@@ -23,6 +23,7 @@ export const notFound = (message = 'Not found.') => new AppError(404, 'NOT_FOUND
 export const conflict = (message: string) => new AppError(409, 'CONFLICT', message);
 export const payloadTooLarge = (message: string) => new AppError(413, 'PAYLOAD_TOO_LARGE', message);
 export const unsupportedMediaType = (message: string) => new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', message);
+export const tooManyRequests = (message: string) => new AppError(429, 'TOO_MANY_REQUESTS', message);
 export const serviceUnavailable = (message: string) => new AppError(503, 'SERVICE_UNAVAILABLE', message);
 
 /** Pipeline stages, used for failure reporting and resumable retries. */

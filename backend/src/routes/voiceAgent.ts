@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { badRequest, conflict, serviceUnavailable } from '../errors.js';
+import { badRequest, conflict, serviceUnavailable, tooManyRequests } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { presentCall } from '../http/presenters.js';
 import { getAuth, requirePermission } from '../middleware/auth.js';
@@ -9,6 +9,7 @@ import {
   LIVE_AGENT_MAX_SESSION_SECONDS,
   LIVE_AGENT_TOKEN_TTL_SECONDS,
   LIVE_AGENT_VOICE,
+  LIVE_CALLS_PER_DAY,
   buildLiveAgentSession,
   sessionReference,
 } from '../services/assemblyai/liveAgent.js';
@@ -30,6 +31,15 @@ export function voiceAgentRouter(deps: AppDeps): Router {
 
   router.post('/session', requirePermission('agent:call'), async (req, res) => {
     const auth = getAuth(req);
+
+    // Live calls cost money and the demo logins are public, so a workspace
+    // gets a day's worth and no more. Counted from the audit trail.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString();
+    const today = await deps.auditEvents.listForOrg(auth.orgId, { eventType: 'VOICE_SESSION_STARTED', since, limit: 1, offset: 0 });
+    if (today.total >= LIVE_CALLS_PER_DAY) {
+      throw tooManyRequests('This workspace has reached its live-call limit for today. Uploading a recording still works.');
+    }
+
     let token: string;
     try {
       token = await deps.voiceAgent.createToken({

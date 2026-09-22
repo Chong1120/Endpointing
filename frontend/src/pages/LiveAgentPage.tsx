@@ -128,7 +128,11 @@ function PrivacyStep({ icon, title, text }: { icon: ReactNode; title: string; te
 
 const pillButton = { borderRadius: 999, px: 4, py: 1.25 };
 
-export function LiveAgentPage() {
+export function LiveAgentPage({
+  variant = 'console',
+  onArchived,
+}: { variant?: 'console' | 'customer'; onArchived?: () => void } = {}) {
+  const customer = variant === 'customer';
   const navigate = useNavigate();
   const notify = useNotify();
   const [stage, setStage] = useState<Stage>('idle');
@@ -186,9 +190,19 @@ export function LiveAgentPage() {
       if (!mounted.current) return;
       notify(
         escalationRef.current
-          ? `${call.reference} is waiting for a person in Escalations. Personal details are removed before anything is stored.`
-          : `${call.reference} is being protected. Personal details are removed before anything is stored.`,
+          ? customer
+            ? 'Thanks — a specialist will call you back within the hour.'
+            : `${call.reference} is waiting for a person in Escalations. Personal details are removed before anything is stored.`
+          : customer
+            ? 'Thanks for calling. Your personal details are being removed from the recording now.'
+            : `${call.reference} is being protected. Personal details are removed before anything is stored.`,
       );
+      // A customer stays on their own page; the staff pipeline view is not for them.
+      if (customer) {
+        setStage('idle');
+        onArchived?.();
+        return;
+      }
       navigate(`/calls/${call.id}/processing`);
     } catch (err) {
       if (!mounted.current) return;
@@ -281,8 +295,12 @@ export function LiveAgentPage() {
             sx={{ bgcolor: alpha(brand.teal, 0.08), color: 'primary.main', '& .MuiChip-icon': { color: 'primary.main' } }}
           />
         }
-        title="Live agent"
-        subtitle="Call Northwind Mobile's AI billing agent. It listens, talks and looks things up in real time. When you hang up, SafeCall redacts the recording before anything is stored."
+        title={customer ? 'Talk to us about your bill' : 'Live agent'}
+        subtitle={
+          customer
+            ? 'Sam answers straight away, checks your account and can refund a charge on the spot. Ask for a person any time and someone will call you back.'
+            : "Call Northwind Mobile's AI billing agent. It listens, talks and looks things up in real time. When you hang up, SafeCall redacts the recording before anything is stored."
+        }
       />
 
       <Grid container spacing={2.5}>

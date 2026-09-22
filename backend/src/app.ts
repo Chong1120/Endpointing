@@ -5,6 +5,7 @@ import type { AppDeps } from './http/appDeps.js';
 import { ProfileCache, requireAuth } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { callsRouter } from './routes/calls.js';
+import { demoAdminRouter, demoRouter } from './routes/demo.js';
 import { followUpsRouter } from './routes/followUps.js';
 import { insightsRouter } from './routes/insights.js';
 import { settingsRouter } from './routes/settings.js';
@@ -41,6 +42,11 @@ export function createApp(deps: AppDeps): Express {
 
   // Shared with the team routes, so a role change or a join takes effect at once.
   const profiles = new ProfileCache();
+  // Unauthenticated: the one-click demo logins (rate limited inside the router).
+  const publicApi = express.Router();
+  publicApi.use(express.json({ limit: '16kb' }));
+  publicApi.use('/demo', demoRouter(deps));
+
   const api = express.Router();
   api.use(express.json({ limit: '256kb' }));
   api.use(requireAuth(deps.authVerifier, deps.users, profiles));
@@ -48,10 +54,13 @@ export function createApp(deps: AppDeps): Express {
   api.use(insightsRouter(deps));
   api.use(followUpsRouter(deps));
   api.use(teamRouter(deps, profiles));
+  api.use(demoAdminRouter(deps));
   api.use(settingsRouter(deps));
   api.use('/voice-agent', voiceAgentRouter(deps));
 
-  app.use('/api', cors({ origin: corsOriginMatcher(deps.config.corsOrigins), maxAge: 600 }), api);
+  const browser = cors({ origin: corsOriginMatcher(deps.config.corsOrigins), maxAge: 600 });
+  app.use('/api', browser, publicApi);
+  app.use('/api', browser, api);
 
   app.use(notFoundHandler);
   app.use(errorHandler(deps.logger, deps.config));

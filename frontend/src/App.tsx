@@ -3,7 +3,10 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter, Link as RouterLink, Navigate, Route, Routes, useLocation } from 'react-router';
 import { RequirePermission } from './components/common';
 import { useAuth } from './hooks/useAuth';
+import { MeProvider, useMe, useMeState } from './hooks/useMe';
 import { AppLayout } from './layouts/AppLayout';
+import { CustomerLayout } from './layouts/CustomerLayout';
+import { CustomerHomePage } from './pages/CustomerHomePage';
 import { LoginPage } from './pages/LoginPage';
 
 // Route-level code splitting keeps the initial bundle small.
@@ -38,6 +41,34 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/** Staff get the console; a customer gets the Northwind support page and nothing else. */
+function Shell() {
+  const { me, loading } = useMeState();
+  if (loading && !me) return <FullPageSpinner />;
+  return me?.user.role === 'customer' ? <CustomerLayout /> : <AppLayout />;
+}
+
+/** Customers only call and look back at their own list; the staff pages are not for them. */
+function StaffOnly({ children }: { children: ReactNode }) {
+  const me = useMe();
+  if (!me) return <FullPageSpinner />;
+  return me.user.role === 'customer' ? <Navigate to="/" replace /> : <>{children}</>;
+}
+
+/**
+ * "Home" is wherever that role actually works: the phone line for a customer,
+ * the queue for a support agent, the dashboard for everyone else. The dashboard
+ * reads analytics, which a support agent may not, so sending them there would
+ * greet them with a permission error.
+ */
+function Home() {
+  const me = useMe();
+  if (!me) return <FullPageSpinner />;
+  if (me.user.role === 'customer') return <CustomerHomePage />;
+  if (!me.user.permissions.includes('analytics:read') && me.user.permissions.includes('followups:read')) return <FollowUpsPage />;
+  return <DashboardPage />;
+}
+
 function NotFound() {
   return (
     <Box sx={{ py: 10, textAlign: 'center' }}>
@@ -58,11 +89,13 @@ export function App() {
         <Route
           element={
             <RequireAuth>
-              <AppLayout />
+              <MeProvider>
+                <Shell />
+              </MeProvider>
             </RequireAuth>
           }
         >
-          <Route index element={<DashboardPage />} />
+          <Route index element={<Home />} />
           <Route
             path="agent"
             element={
@@ -87,11 +120,47 @@ export function App() {
               </RequirePermission>
             }
           />
-          <Route path="team" element={<TeamPage />} />
-          <Route path="calls" element={<CallsPage />} />
-          <Route path="calls/:id" element={<CallDetailPage />} />
-          <Route path="calls/:id/processing" element={<ProcessingPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route
+            path="team"
+            element={
+              <RequirePermission permission="team:read">
+                <TeamPage />
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="calls"
+            element={
+              <RequirePermission permission="calls:browse">
+                <CallsPage />
+              </RequirePermission>
+            }
+          />
+          {/* A customer has no business on the staff call pages, even for their own call. */}
+          <Route
+            path="calls/:id"
+            element={
+              <StaffOnly>
+                <CallDetailPage />
+              </StaffOnly>
+            }
+          />
+          <Route
+            path="calls/:id/processing"
+            element={
+              <StaffOnly>
+                <ProcessingPage />
+              </StaffOnly>
+            }
+          />
+          <Route
+            path="analytics"
+            element={
+              <RequirePermission permission="analytics:read">
+                <AnalyticsPage />
+              </RequirePermission>
+            }
+          />
           <Route
             path="policies"
             element={

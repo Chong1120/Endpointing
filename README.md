@@ -213,20 +213,31 @@ The live agent needs no extra variables.
 
 ## Roles
 
-Everyone who signs up gets their own workspace and is its admin. An admin's **Team** page has an invite code (signed with the API secret, valid for seven days, stored nowhere); a teammate signs up, pastes it under *Join a workspace*, and arrives as a support agent. The admin can then change their role.
+A workspace runs on three roles:
 
 | Role | What it is for | What it may do |
 | --- | --- | --- |
-| **Admin** | Runs the workspace | Everything below, plus PII policies, deletes, re-running redaction and the team |
-| **Analyst** | Studies the safe archive | Read calls, search, analytics, audit trail, dataset export, add calls, call the live agent |
-| **Support agent** | Works escalated calls | Read calls, the Escalations queue (and close items on it), call the live agent |
-| **Viewer** | Looks only | Read calls and the audit trail |
+| **Customer** | The person who calls in | Call the AI agent, and see a list of **their own calls** — nothing else |
+| **Support agent** | Works the calls the AI hands over | The Escalations queue and the calls on it |
+| **Admin** | Runs the workspace | Everything: archive, search, analytics, PII policies, deletes, audit trail, exports, the team |
 
-The API enforces this on every route ([backend/src/domain/permissions.ts](backend/src/domain/permissions.ts)); the screens only hide what a role cannot use.
+Each role is deliberately narrow. A customer never reaches the console: they get their own page, and the API filters calls to the ones they created, so one customer cannot read another's — another person's call is reported as *not found*, which does not confirm it exists. A support agent has no archive, no analytics, no team page, and cannot phone the AI agent: they are the person it hands calls *to*.
+
+Two further roles exist for larger teams and keep working, though the Team page only offers them to someone who already has one: **Analyst** (search, analytics, exports, no policy changes) and **Viewer** (read calls and the audit trail).
+
+It is enforced per route in [backend/src/domain/permissions.ts](backend/src/domain/permissions.ts); the screens only hide what a role cannot use.
+
+Everyone who signs up gets their own workspace and is its admin. An admin's **Team** page has an invite code (signed with the API secret, valid for seven days, stored nowhere); a teammate signs up, pastes it under *Join a workspace*, and arrives as a support agent. The admin can then change their role.
+
+### Trying it without signing up
+
+The login page offers three one-click logins — **Customer**, **Support agent**, **Admin** — sharing one demo workspace, so a call made as the customer turns up in the agent's queue and the admin's audit trail. A role switcher sits at the top of the page once you are in, and the demo admin can **Reset demo** to put everything back.
+
+The passwords are derived from the API's secret and used server-side only (`POST /api/demo/login` returns a session, never a password), demo sign-ins are rate limited per IP, and every workspace may start at most 50 live calls a day, so a public login cannot run up an AssemblyAI bill.
 
 ## Database setup
 
-Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql), then [0002_roles.sql](database/migrations/0002_roles.sql) (adds the support-agent role).
+Schema: [database/migrations/0001_init.sql](database/migrations/0001_init.sql), then [0002_roles.sql](database/migrations/0002_roles.sql) (support-agent role) and [0003_customer_role.sql](database/migrations/0003_customer_role.sql) (customer role — **required before the demo logins work**).
 
 - **Tables:** `organizations`, `users`, `calls`, `call_utterances`, `audit_logs`, `pii_policy_settings`.
 - **JSONB columns:** `pii_counts`, `ai_summary` and audit `metadata`.
@@ -329,6 +340,8 @@ All `/api/*` endpoints need `Authorization: Bearer <Supabase access token>` and 
 | `POST` | `/api/voice-agent/sessions/:id/archive` | Fetch a finished live call's recording, run it through redaction, delete the AssemblyAI session → 202 (optional `escalation.reason`) |
 | `GET` | `/api/follow-ups` | Calls the agent handed to a person and nobody has closed yet |
 | `POST` | `/api/calls/:id/follow-up/resolve` | Close an escalation (support agent or admin) |
+| `GET` / `POST` | `/api/demo/personas`, `/api/demo/login` | The three demo roles, and a one-click session as one of them (no auth; rate limited per IP) |
+| `POST` | `/api/demo/reset` | Clear and reseed the shared demo workspace (demo admin only) |
 | `GET` | `/api/team` | People in the workspace, their roles, and an invite code for admins |
 | `POST` | `/api/team/invite` | New invite code (admin) |
 | `POST` | `/api/team/join` | Join the workspace an invite code points at, as a support agent |

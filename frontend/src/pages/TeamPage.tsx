@@ -9,10 +9,19 @@ import { useNotify } from '../hooks/useNotify';
 import { ApiError, api } from '../services/api';
 import type { UserRole } from '../services/types';
 
+/**
+ * The three roles a workspace actually runs on. `analyst` and `viewer` still
+ * exist and keep working; they are only offered if someone already has one.
+ */
 const ROLES: Array<{ value: UserRole; what: string }> = [
-  { value: 'admin', what: 'Runs the workspace: PII policies, deletions, exports and the team.' },
+  { value: 'admin', what: 'Runs the workspace: PII policies, deletions, exports, analytics and the team.' },
+  { value: 'agent', what: 'Works the escalation queue and the calls on it. Nothing else.' },
+  { value: 'customer', what: 'Calls the AI agent and sees only their own calls. Never the console.' },
+];
+
+const ALL_ROLES: Array<{ value: UserRole; what: string }> = [
+  ...ROLES,
   { value: 'analyst', what: 'Studies the safe archive: search, analytics and exports. No policy changes.' },
-  { value: 'agent', what: 'Works the escalation queue and listens to redacted calls. Nothing else.' },
   { value: 'viewer', what: 'Reads calls and the audit trail. Changes nothing.' },
 ];
 
@@ -90,7 +99,7 @@ export function TeamPage() {
                     {member.email} {member.is_you && <Chip size="small" label="you" sx={{ ml: 0.5 }} />}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {ROLES.find((role) => role.value === member.role)?.what}
+                    {ALL_ROLES.find((role) => role.value === member.role)?.what}
                   </Typography>
                 </Box>
                 {manages ? (
@@ -102,7 +111,7 @@ export function TeamPage() {
                     onChange={(event) => void changeRole(member.id, event.target.value as UserRole)}
                     sx={{ width: 190, flexShrink: 0 }}
                   >
-                    {ROLES.map((role) => (
+                    {(ROLES.some((role) => role.value === member.role) ? ROLES : ALL_ROLES).map((role) => (
                       <MenuItem key={role.value} value={role.value}>
                         {roleName(role.value)}
                       </MenuItem>

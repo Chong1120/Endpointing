@@ -1,14 +1,18 @@
 import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
+import ScienceRounded from '@mui/icons-material/ScienceRounded';
 import ShieldRounded from '@mui/icons-material/ShieldRounded';
 import VerifiedUserRounded from '@mui/icons-material/VerifiedUserRounded';
-import { Alert, Box, Button, Card, CardContent, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, Divider, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { Logo } from '../components/Logo';
 import { RedactionMarker } from '../components/RedactedText';
+import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../hooks/useAuth';
+import { api } from '../services/api';
+import type { DemoPersona } from '../services/types';
 import { brand } from '../theme';
 
 function Feature({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
@@ -22,6 +26,66 @@ function Feature({ icon, title, text }: { icon: ReactNode; title: string; text: 
         <Typography sx={{ fontSize: '0.875rem', color: '#94A3B8', lineHeight: 1.5 }}>{text}</Typography>
       </Box>
     </Stack>
+  );
+}
+
+/** One-click sign-in as a shared demo account, so the product can be tried without signing up. */
+function DemoLogins({ onError }: { onError: (message: string | null) => void }) {
+  const { signInAsDemo } = useAuth();
+  const personas = useApiQuery(() => api.demoPersonas(), []);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function enter(key: DemoPersona['key']) {
+    setBusy(key);
+    onError(null);
+    try {
+      await signInAsDemo(key);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'The demo accounts are unavailable. Sign up instead.');
+      setBusy(null);
+    }
+  }
+
+  if (personas.error || (!personas.loading && !personas.data)) return null;
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+        <ScienceRounded sx={{ fontSize: 18, color: 'primary.main' }} />
+        <Typography variant="body2" sx={{ fontWeight: 650 }}>
+          Try it without signing up
+        </Typography>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+        Shared accounts for testing, one for each role. They all work in the same demo workspace, so a call made as the customer shows up
+        for the agent and the admin.
+      </Typography>
+      <Stack spacing={1}>
+        {(personas.data?.personas ?? []).map((persona) => (
+          <Button
+            key={persona.key}
+            onClick={() => void enter(persona.key)}
+            disabled={busy !== null}
+            variant="outlined"
+            sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1.1, px: 1.75 }}
+          >
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {busy === persona.key ? 'Signing in…' : `Enter as ${persona.label}`}
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.4 }}>
+                {persona.blurb}
+              </Typography>
+            </Box>
+          </Button>
+        ))}
+      </Stack>
+      <Divider sx={{ mt: 2.5 }}>
+        <Typography variant="caption" color="text.secondary">
+          or use your own account
+        </Typography>
+      </Divider>
+    </Box>
   );
 }
 
@@ -105,6 +169,7 @@ export function LoginPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2.5 }}>
               {mode === 'signin' ? 'Sign in to your SafeCall archive.' : 'Your organization gets its own isolated archive.'}
             </Typography>
+            <DemoLogins onError={setError} />
             <Tabs value={mode} onChange={(_e, value) => setMode(value)} sx={{ mb: 2.5, minHeight: 40, '& .MuiTab-root': { minHeight: 40 } }}>
               <Tab value="signin" label="Sign in" />
               <Tab value="signup" label="Create account" />

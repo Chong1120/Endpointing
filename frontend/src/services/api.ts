@@ -7,6 +7,7 @@ import type {
   CallDetail,
   CallFilters,
   CallListItem,
+  DemoPersona,
   FollowUp,
   LiveAgentSession,
   Me,
@@ -165,6 +166,13 @@ export const api = {
     request<{ call: Call; follow_up: string | null }>(archivePath(sessionId), { method: 'POST', body: archiveBody(escalation) }),
   followUps: () => request<{ items: FollowUp[]; total: number }>('/api/follow-ups'),
   resolveFollowUp: (callId: string) => request<void>(`/api/calls/${callId}/follow-up/resolve`, { method: 'POST' }),
+  demoPersonas: () => request<{ personas: DemoPersona[]; notice: string }>('/api/demo/personas'),
+  demoLogin: (persona: DemoPersona['key']) =>
+    request<{ persona: DemoPersona; session: { access_token: string; refresh_token: string; expires_in: number } }>('/api/demo/login', {
+      method: 'POST',
+      body: JSON.stringify({ persona }),
+    }),
+  resetDemo: () => request<{ calls_deleted: number }>('/api/demo/reset', { method: 'POST' }),
   team: () => request<Team>('/api/team'),
   inviteCode: () => request<{ code: string; valid_for_days: number }>('/api/team/invite', { method: 'POST' }),
   joinTeam: (code: string) =>

@@ -1,10 +1,35 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
+import { useApiQuery } from './useApiQuery';
+import { useAuth } from './useAuth';
+import { api, type ApiError } from '../services/api';
 import type { Me, Permission } from '../services/types';
 
-export const MeContext = createContext<Me | null>(null);
+interface MeState {
+  me: Me | null;
+  loading: boolean;
+  error: ApiError | null;
+  reload(): void;
+}
 
-/** Profile, organization and platform settings for the signed-in user (loaded by AppLayout). */
+const MeContext = createContext<MeState>({ me: null, loading: true, error: null, reload: () => undefined });
+
+/** Loads the signed-in user once for everything below it: role, permissions, workspace, platform settings. */
+export function MeProvider({ children }: { children: ReactNode }) {
+  const { session } = useAuth();
+  const query = useApiQuery(() => api.me(), [session?.user.id]);
+  return (
+    <MeContext.Provider value={{ me: query.data ?? null, loading: query.loading, error: query.error, reload: () => void query.reload() }}>
+      {children}
+    </MeContext.Provider>
+  );
+}
+
+/** Profile, organization and platform settings for the signed-in user. */
 export function useMe(): Me | null {
+  return useContext(MeContext).me;
+}
+
+export function useMeState(): MeState {
   return useContext(MeContext);
 }
 

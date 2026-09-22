@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { DEPARTMENTS, POLICY_PRESETS } from '../domain/types.js';
+import { can } from '../domain/permissions.js';
+import { DEPARTMENTS, POLICY_PRESETS, type AuthContext } from '../domain/types.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { presentCall } from '../http/presenters.js';
@@ -20,6 +21,19 @@ const UploadFieldsSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
 });
+
+/** Customers may only see the calls they made; staff see the whole workspace. */
+function ownCallsOnly(auth: AuthContext): string | undefined {
+  return can(auth.role, 'calls:read:all') ? undefined : auth.userId;
+}
+
+/** Organization-scoped lookup that also hides other people's calls from a customer. */
+async function findVisibleCall(deps: AppDeps, auth: AuthContext, id: unknown) {
+  const call = await deps.calls.findById(auth.orgId, parseId(id));
+  if (!call) return null;
+  const mine = ownCallsOnly(auth);
+  return mine && call.created_by !== mine ? null : call;
+}
 
 export function callsRouter(deps: AppDeps): Router {
   const router = Router();
@@ -61,7 +75,7 @@ export function callsRouter(deps: AppDeps): Router {
   router.get('/', async (req, res) => {
     const auth = getAuth(req);
     const query = parseInput(CallQuerySchema, req.query);
-    const { items, total } = await deps.calls.list(auth.orgId, toCallFilters(query));
+    const { items, total } = await deps.calls.list(auth.orgId, toCallFilters(query, ownCallsOnly(auth)));
     res.json({
       items: items.map((item) => ({ ...item, reference: `CALL-${item.call_number}` })),
       total,
@@ -72,7 +86,7 @@ export function callsRouter(deps: AppDeps): Router {
 
   router.get('/:id', async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     const [utterances, audit] = await Promise.all([
       deps.calls.listUtterances(call.id),
@@ -84,7 +98,7 @@ export function callsRouter(deps: AppDeps): Router {
   // Short-lived signed URL for the REDACTED recording in the private bucket.
   router.get('/:id/audio-url', async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     if (!call.safe_audio_path) throw conflict('The safe recording is not available yet.');
 
@@ -103,7 +117,7 @@ export function callsRouter(deps: AppDeps): Router {
 
   router.get('/:id/audit', async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     res.json({ events: await deps.auditEvents.listForCall(auth.orgId, call.id) });
   });
@@ -111,7 +125,7 @@ export function callsRouter(deps: AppDeps): Router {
   // Resume a failed pipeline from the stage that failed.
   router.post('/:id/retry', requirePermission('calls:upload'), async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     if (!canRetry(call) || !call.assemblyai_transcript_id) {
       throw conflict('This call cannot be retried. Upload the recording again instead.');
@@ -133,7 +147,7 @@ export function callsRouter(deps: AppDeps): Router {
   // redact them in the transcript and the recording.
   router.post('/:id/recheck-redaction', requirePermission('calls:recheck'), async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     if (call.status !== 'COMPLETED') throw conflict('Only archived calls can be rechecked.');
 
@@ -144,7 +158,7 @@ export function callsRouter(deps: AppDeps): Router {
 
   router.delete('/:id', requirePermission('calls:delete'), async (req, res) => {
     const auth = getAuth(req);
-    const call = await deps.calls.findById(auth.orgId, parseId(req.params.id));
+    const call = await findVisibleCall(deps, auth, req.params.id);
     if (!call) throw notFound('Call not found.');
     if (call.status === 'UPLOADING' || call.status === 'PROCESSING') {
       throw conflict('This call is still being processed. Try again when it has finished.');

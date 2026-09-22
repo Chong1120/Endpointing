@@ -16,8 +16,12 @@ export const DEPARTMENTS = [
 export const SENTIMENTS = ['positive', 'neutral', 'negative'] as const;
 export type Sentiment = (typeof SENTIMENTS)[number];
 
-/** admin runs the workspace · analyst studies the archive · agent works escalated calls · viewer only looks. */
-export const USER_ROLES = ['admin', 'analyst', 'agent', 'viewer'] as const;
+/**
+ * admin runs the workspace · analyst studies the archive · agent works
+ * escalated calls · viewer only looks · customer calls in and sees nothing
+ * but their own calls.
+ */
+export const USER_ROLES = ['admin', 'analyst', 'agent', 'viewer', 'customer'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
 declare const safeTextBrand: unique symbol;
@@ -130,6 +134,7 @@ export const AUDIT_EVENT_TYPES = [
   'FOLLOW_UP_RESOLVED',
   'MEMBER_JOINED',
   'MEMBER_ROLE_CHANGED',
+  'DEMO_RESET',
 ] as const;
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 

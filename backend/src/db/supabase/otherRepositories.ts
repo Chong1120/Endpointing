@@ -33,13 +33,14 @@ export class SupabaseAuditRepository implements AuditRepository {
 
   async listForOrg(
     orgId: string,
-    filters: { callId?: string; eventType?: string; limit: number; offset: number },
+    filters: { callId?: string; eventType?: string; since?: string; limit: number; offset: number },
   ): Promise<{ items: AuditListItem[]; total: number }> {
     let query = this.db
       .from('audit_logs')
       .select('*, calls(call_number)', { count: 'exact' })
       .eq('organization_id', orgId);
     if (filters.callId) query = query.eq('call_id', filters.callId);
+    if (filters.since) query = query.gte('created_at', filters.since);
     if (filters.eventType) query = query.eq('event_type', filters.eventType);
     const { data, error, count } = await query
       .order('created_at', { ascending: false })
@@ -108,6 +109,29 @@ export class SupabaseUserRepository implements UserRepository {
     const { data, error } = await this.db.from('organizations').select('id, name').eq('id', orgId).maybeSingle();
     assertNoError(error, 'reading an organization');
     return data ? { id: data.id as string, name: data.name as string } : null;
+  }
+
+  async findOrganizationByName(name: string): Promise<{ id: string; name: string } | null> {
+    const { data, error } = await this.db.from('organizations').select('id, name').eq('name', name).limit(1).maybeSingle();
+    assertNoError(error, 'reading an organization');
+    return data ? { id: data.id as string, name: data.name as string } : null;
+  }
+
+  async createOrganization(name: string): Promise<{ id: string; name: string }> {
+    const { data, error } = await this.db.from('organizations').insert({ name }).select('id, name').single();
+    assertNoError(error, 'creating an organization');
+    if (!data) throw new Error('The organization could not be created.');
+    return { id: data.id as string, name: data.name as string };
+  }
+
+  async upsertProfile({ userId, email, orgId, role }: { userId: string; email: string; orgId: string; role: UserRole }): Promise<UserProfile> {
+    const { data, error } = await this.db
+      .from('users')
+      .upsert({ id: userId, email, organization_id: orgId, role }, { onConflict: 'id' })
+      .select('id, email, role, organization_id, organizations(name)')
+      .single();
+    assertNoError(error, 'saving a profile');
+    return toProfile(data as unknown as MemberRow);
   }
 }
 

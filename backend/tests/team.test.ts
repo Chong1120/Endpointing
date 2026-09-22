@@ -38,10 +38,14 @@ function member(token: string, role: UserRole, orgId = ORG_A, orgName = 'Northwi
 describe('what each role may do', () => {
   it('gives every role the permissions it needs and nothing more', () => {
     expect(permissionsFor('admin')).toContain('team:manage');
-    expect(permissionsFor('analyst')).toEqual(expect.arrayContaining(['calls:read', 'export', 'calls:upload']));
+    expect(permissionsFor('analyst')).toEqual(expect.arrayContaining(['calls:browse', 'analytics:read', 'export', 'calls:upload']));
     expect(permissionsFor('analyst')).not.toContain('followups:resolve');
-    expect(permissionsFor('agent')).toEqual(['calls:read', 'followups:read', 'followups:resolve', 'agent:call']);
-    expect(permissionsFor('viewer')).toEqual(['calls:read', 'audit:read']);
+    // A support agent gets the queue and the calls on it: no archive, no
+    // analytics, no team, and no phoning the AI agent they take calls from.
+    expect(permissionsFor('agent')).toEqual(['calls:read', 'calls:read:all', 'followups:read', 'followups:resolve']);
+    expect(permissionsFor('viewer')).toEqual(['calls:read', 'calls:read:all', 'calls:browse', 'audit:read']);
+    // A customer may call the agent and read their own calls, and nothing else.
+    expect(permissionsFor('customer')).toEqual(['calls:read', 'agent:call']);
   });
 
   it('tells the browser what the signed-in user may do', async () => {
@@ -52,14 +56,20 @@ describe('what each role may do', () => {
     expect(res.body.user.permissions).not.toContain('policies:write');
   });
 
-  it('stops a support agent from exporting, uploading, deleting or changing policies', async () => {
+  it('keeps a support agent to their queue', async () => {
     member('sam', 'agent');
-    expect((await request(app).get('/api/export?format=csv').set(as('sam'))).status).toBe(403);
+    for (const path of ['/api/export?format=csv', '/api/search?q=bill', '/api/analytics', '/api/team']) {
+      expect((await request(app).get(path).set(as('sam'))).status).toBe(403);
+    }
     expect((await request(app).put('/api/policies/CUSTOM').set(as('sam')).send({ policies: ['PERSON_NAME'] })).status).toBe(403);
     expect((await request(app).delete(`/api/calls/${MISSING_CALL}`).set(as('sam'))).status).toBe(403);
     expect((await request(app).post('/api/demo/samples/anything').set(as('sam'))).status).toBe(403);
-    // ...but the escalation queue is their job.
+    // The agent is who the AI hands calls to; they don't phone it themselves.
+    expect((await request(app).post('/api/voice-agent/session').set(as('sam'))).status).toBe(403);
+
+    // The queue, and the calls on it, are their job.
     expect((await request(app).get('/api/follow-ups').set(as('sam'))).status).toBe(200);
+    expect((await request(app).get('/api/calls').set(as('sam'))).status).toBe(200);
   });
 
   it('lets an analyst read the queue but not close anything on it', async () => {
@@ -90,21 +100,27 @@ describe('invite codes', () => {
 });
 
 describe('a workspace and its people', () => {
-  it('shows the roster to everyone and the invite code only to admins', async () => {
+  it('shows the roster and the invite code to admins, and hides the page from everyone else', async () => {
     member('ada', 'admin');
     member('sam', 'agent');
+    member('ana', 'analyst');
 
     const admin = await request(app).get('/api/team').set(as('ada'));
     expect(admin.body.members.map((m: { email: string; role: string }) => [m.email, m.role])).toEqual([
       ['ada@example.com', 'admin'],
       ['sam@example.com', 'agent'],
+      ['ana@example.com', 'analyst'],
     ]);
     expect(admin.body.members.find((m: { is_you: boolean; email: string }) => m.is_you).email).toBe('ada@example.com');
     expect(readInviteCode(SECRET, admin.body.invite.code)).toBe(ORG_A);
 
-    const agent = await request(app).get('/api/team').set(as('sam'));
-    expect(agent.body.invite).toBeNull();
+    // Managing people is the admin's job; nobody else needs the page.
+    expect((await request(app).get('/api/team').set(as('sam'))).status).toBe(403);
+    expect((await request(app).get('/api/team').set(as('ana'))).status).toBe(403);
     expect((await request(app).post('/api/team/invite').set(as('sam'))).status).toBe(403);
+
+    // Joining stays open: everyone is an admin of their own workspace until they join another.
+    expect((await request(app).post('/api/team/join').set(as('sam')).send({ code: 'NOT-A-CODE' })).status).toBe(400);
   });
 
   it('moves someone into the workspace when they redeem a code, and their new role applies at once', async () => {

@@ -44,7 +44,11 @@ export function DashboardPage() {
   const me = useMe();
   const canUpload = useCan('calls:upload');
   const canCall = useCan('agent:call');
-  const analytics = useApiQuery(() => api.analytics(), [], { poll: (d) => (d && d.totals.in_progress > 0 ? 4000 : false) });
+  // Roles without analytics still land here; asking anyway would greet them with a permission error.
+  const canSeeTotals = useCan('analytics:read');
+  const analytics = useApiQuery(async () => (canSeeTotals ? await api.analytics() : null), [canSeeTotals], {
+    poll: (d) => (d && d.totals.in_progress > 0 ? 4000 : false),
+  });
   const recent = useApiQuery(() => api.listCalls({ page_size: 8 }), [], {
     poll: (d) => (d?.items.some((c) => IN_PROGRESS.includes(c.status)) ? 3000 : false),
   });
@@ -88,7 +92,7 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      <Grid container spacing={2} sx={{ mb: 2 }}>
+      <Grid container spacing={2} sx={{ mb: 2, display: canSeeTotals ? undefined : 'none' }}>
         {[
           { label: 'Calls processed', value: totals?.calls, icon: <ForumRounded />, caption: totals ? `${totals.in_progress} in progress · ${totals.failed} failed` : undefined },
           { label: 'PII entities protected', value: totals?.pii_entities, icon: <LockRounded />, caption: 'Redacted from transcript and audio', accent: true },

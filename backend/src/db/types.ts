@@ -24,6 +24,8 @@ export interface NewCall {
 export type CallPatch = Partial<Omit<CallRecord, 'id' | 'call_number' | 'organization_id' | 'created_at' | 'updated_at'>>;
 
 export interface CallFilters {
+  /** Set for roles that may only see their own calls (customers). */
+  createdBy?: string;
   status?: CallStatus;
   department?: string;
   sentiment?: Sentiment;
@@ -107,7 +109,7 @@ export interface AuditRepository {
   listForCall(orgId: string, callId: string): Promise<AuditEvent[]>;
   listForOrg(
     orgId: string,
-    filters: { callId?: string; eventType?: string; limit: number; offset: number },
+    filters: { callId?: string; eventType?: string; since?: string; limit: number; offset: number },
   ): Promise<{ items: AuditListItem[]; total: number }>;
 }
 
@@ -128,6 +130,10 @@ export interface UserRepository {
   /** Moves a user into another organization (accepting an invite). */
   moveToOrganization(userId: string, orgId: string, role: UserRole): Promise<UserProfile>;
   findOrganization(orgId: string): Promise<{ id: string; name: string } | null>;
+  findOrganizationByName(name: string): Promise<{ id: string; name: string } | null>;
+  createOrganization(name: string): Promise<{ id: string; name: string }>;
+  /** Creates or repairs a profile in a given organization (used by the demo workspace). */
+  upsertProfile(profile: { userId: string; email: string; orgId: string; role: UserRole }): Promise<UserProfile>;
 }
 
 export interface PolicyRepository {

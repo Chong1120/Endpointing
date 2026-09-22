@@ -20,7 +20,7 @@ export function teamRouter(deps: AppDeps, profiles: ProfileCache): Router {
   const router = Router();
   const secret = deps.config.assemblyai.webhookSecret;
 
-  router.get('/team', async (req, res) => {
+  router.get('/team', requirePermission('team:read'), async (req, res) => {
     const auth = getAuth(req);
     const members = await deps.users.listForOrg(auth.orgId);
     const manages = permissionsFor(auth.role).includes('team:manage');

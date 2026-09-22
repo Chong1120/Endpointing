@@ -28,6 +28,7 @@ import type {
   TranscriptResult,
 } from '../../src/services/assemblyai/transcription.js';
 import type { VoiceAgentService, VoiceSession } from '../../src/services/assemblyai/voiceAgent.js';
+import type { DemoAccountService } from '../../src/services/demoAccounts.js';
 import { RepositoryAuditLogger } from '../../src/services/audit.js';
 import type { AnalysisResult, AnalysisService } from '../../src/services/llm/analysis.js';
 import { FileSampleCatalog } from '../../src/services/samples.js';
@@ -120,6 +121,7 @@ export class InMemoryCallRepository implements CallRepository {
   private filtered(orgId: string, filters: Partial<CallFilters>): CallRecord[] {
     return [...this.calls.values()]
       .filter((c) => c.organization_id === orgId)
+      .filter((c) => !filters.createdBy || c.created_by === filters.createdBy)
       .filter((c) => !filters.status || c.status === filters.status)
       .filter((c) => !filters.department || c.department === filters.department)
       .filter((c) => !filters.sentiment || c.sentiment === filters.sentiment)
@@ -242,6 +244,7 @@ export class InMemoryAuditRepository implements AuditRepository {
 
 export class InMemoryUserRepository implements UserRepository {
   readonly profiles = new Map<string, UserProfile>();
+  readonly organizations = new Map<string, string>();
 
   async ensureProfile(userId: string, email: string, orgName: string) {
     let profile = this.profiles.get(userId);
@@ -274,8 +277,28 @@ export class InMemoryUserRepository implements UserRepository {
   }
 
   async findOrganization(orgId: string) {
+    const known = this.organizations.get(orgId);
+    if (known) return { id: orgId, name: known };
     const member = [...this.profiles.values()].find((profile) => profile.orgId === orgId);
     return member ? { id: orgId, name: member.orgName } : null;
+  }
+
+  async findOrganizationByName(name: string) {
+    for (const [id, orgName] of this.organizations) if (orgName === name) return { id, name };
+    const member = [...this.profiles.values()].find((profile) => profile.orgName === name);
+    return member ? { id: member.orgId, name } : null;
+  }
+
+  async createOrganization(name: string) {
+    const id = randomUUID();
+    this.organizations.set(id, name);
+    return { id, name };
+  }
+
+  async upsertProfile({ userId, email, orgId, role }: { userId: string; email: string; orgId: string; role: UserRole }) {
+    const profile = { userId, email, orgId, orgName: this.organizations.get(orgId) ?? 'Organization', role };
+    this.profiles.set(userId, profile);
+    return profile;
   }
 }
 
@@ -421,6 +444,30 @@ export class InMemoryQueue implements JobQueue {
   async close() {}
 }
 
+/** Demo sign-in without Supabase: the access token is the email, which the fake verifier accepts. */
+export class FakeDemoAccountService implements DemoAccountService {
+  readonly users = new Map<string, { id: string; password: string }>();
+
+  constructor(private readonly verifier: FakeAuthVerifier) {}
+
+  async ensureUser(email: string, password: string) {
+    const existing = this.users.get(email);
+    if (existing) {
+      existing.password = password;
+      return existing.id;
+    }
+    const identity = this.verifier.addUser(email, { email });
+    this.users.set(email, { id: identity.userId, password });
+    return identity.userId;
+  }
+
+  async signIn(email: string, password: string) {
+    const user = this.users.get(email);
+    if (!user || user.password !== password) throw new Error('bad demo credentials');
+    return { userId: user.id, accessToken: email, refreshToken: `refresh-${email}`, expiresIn: 3600 };
+  }
+}
+
 export class FakeAuthVerifier implements AuthVerifier {
   readonly tokens = new Map<string, VerifiedIdentity>();
 
@@ -485,6 +532,7 @@ export function buildTestDeps(overrides: Partial<AppConfig> = {}) {
   const queue = new InMemoryQueue();
   const authVerifier = new FakeAuthVerifier();
   const voiceAgent = new FakeVoiceAgentService();
+  const demoAccounts = new FakeDemoAccountService(authVerifier);
 
   const deps: AppDeps = {
     config: testConfig(overrides),
@@ -501,7 +549,9 @@ export function buildTestDeps(overrides: Partial<AppConfig> = {}) {
     authVerifier,
     samples: new FileSampleCatalog(),
     voiceAgent,
+    demoAccounts,
+    demoSeeding: false,
     sleep: async () => undefined,
   };
-  return { deps, calls, auditEvents, users, policies, transcription, analysis, storage, queue, authVerifier, voiceAgent };
+  return { deps, calls, auditEvents, users, policies, transcription, analysis, storage, queue, authVerifier, voiceAgent, demoAccounts };
 }

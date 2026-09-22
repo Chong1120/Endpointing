@@ -57,6 +57,7 @@ export function CallDetailPage() {
   const { id = '' } = useParams();
   const me = useMe();
   const canDelete = useCan('calls:delete');
+  const canRetry = useCan('calls:upload');
   const navigate = useNavigate();
   const notify = useNotify();
   const playerRef = useRef<SafeAudioHandle>(null);
@@ -128,7 +129,7 @@ export function CallDetailPage() {
         subtitle={`${call.original_filename} · ${call.department} · ${formatDateTime(call.created_at)}${call.source === 'sample' ? ' · synthetic sample' : ''}`}
         actions={
           <>
-            {call.can_retry && (
+            {call.can_retry && canRetry && (
               <Button variant="contained" startIcon={<RefreshRounded />} onClick={() => void retry()} disabled={busy}>
                 Retry
               </Button>

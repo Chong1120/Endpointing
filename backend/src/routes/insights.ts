@@ -23,7 +23,7 @@ export function insightsRouter(deps: AppDeps): Router {
   const router = Router();
 
   // Full-text search over SAFE data only (redacted transcript, AI analysis, metadata).
-  router.get('/search', async (req, res) => {
+  router.get('/search', requirePermission('calls:browse'), async (req, res) => {
     const auth = getAuth(req);
     const query = parseInput(CallQuerySchema, req.query);
     const filters = toCallFilters(query);
@@ -48,7 +48,7 @@ export function insightsRouter(deps: AppDeps): Router {
     });
   });
 
-  router.get('/analytics', async (req, res) => {
+  router.get('/analytics', requirePermission('analytics:read'), async (req, res) => {
     const auth = getAuth(req);
     res.json(computeAnalytics(await deps.calls.listForAnalytics(auth.orgId)));
   });

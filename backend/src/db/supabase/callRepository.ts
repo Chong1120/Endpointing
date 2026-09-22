@@ -24,6 +24,7 @@ type Query = any;
 
 function applyFilters(query: Query, filters: Partial<CallFilters>): Query {
   let q = query;
+  if (filters.createdBy) q = q.eq('created_by', filters.createdBy);
   if (filters.status) q = q.eq('status', filters.status);
   if (filters.department) q = q.eq('department', filters.department);
   if (filters.sentiment) q = q.eq('sentiment', filters.sentiment);
