@@ -1,11 +1,8 @@
-import AutoAwesomeRounded from '@mui/icons-material/AutoAwesomeRounded';
 import LockRounded from '@mui/icons-material/LockRounded';
 import ScienceRounded from '@mui/icons-material/ScienceRounded';
-import ShieldRounded from '@mui/icons-material/ShieldRounded';
-import VerifiedUserRounded from '@mui/icons-material/VerifiedUserRounded';
 import { Alert, Box, Button, Card, CardContent, Divider, Stack, Tab, Tabs, TextField, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router';
 import { Logo } from '../components/Logo';
 import { RedactionMarker } from '../components/RedactedText';
@@ -13,21 +10,8 @@ import { useApiQuery } from '../hooks/useApiQuery';
 import { useAuth } from '../hooks/useAuth';
 import { api } from '../services/api';
 import type { DemoPersona } from '../services/types';
-import { brand } from '../theme';
-
-function Feature({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
-  return (
-    <Stack direction="row" spacing={1.75}>
-      <Box sx={{ width: 38, height: 38, flexShrink: 0, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: alpha(brand.tealBright, 0.14), color: brand.tealBright }}>
-        {icon}
-      </Box>
-      <Box>
-        <Typography sx={{ fontWeight: 650, color: '#F8FAFC' }}>{title}</Typography>
-        <Typography sx={{ fontSize: '0.875rem', color: '#94A3B8', lineHeight: 1.5 }}>{text}</Typography>
-      </Box>
-    </Stack>
-  );
-}
+import { Stamp } from '../components/StatusBadge';
+import { GRAIN, brand, fonts } from '../theme';
 
 /** One-click sign-in as a shared demo account, so the product can be tried without signing up. */
 function DemoLogins({ onError }: { onError: (message: string | null) => void }) {
@@ -126,36 +110,58 @@ export function LoginPage() {
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.1fr 1fr' } }}>
+      {/* The dossier cover: ink, a stamped label, and a page from the archive with its redactions. */}
       <Box
         sx={{
           display: { xs: 'none', md: 'flex' },
           flexDirection: 'column',
           justifyContent: 'space-between',
           p: 6,
-          background: `radial-gradient(circle at 20% 10%, ${alpha(brand.tealBright, 0.16)} 0, transparent 45%), linear-gradient(160deg, ${brand.ink} 0%, #0E1D2B 100%)`,
+          bgcolor: brand.ink,
+          backgroundImage: GRAIN,
         }}
       >
         <Logo inverted />
-        <Box sx={{ maxWidth: 520 }}>
-          <Typography sx={{ color: brand.tealBright, fontWeight: 700, letterSpacing: '0.08em', fontSize: '0.78rem' }}>
-            PRIVACY-FIRST CALL ARCHIVE
+        <Box sx={{ maxWidth: 540 }}>
+          <Typography sx={{ fontFamily: fonts.mono, color: brand.signal, fontWeight: 500, letterSpacing: '0.16em', fontSize: '0.72rem' }}>
+            CASE FILE · CALL RECORDINGS
           </Typography>
-          <Typography sx={{ color: '#fff', fontSize: '2.35rem', fontWeight: 750, letterSpacing: '-0.025em', lineHeight: 1.15, mt: 1.5 }}>
+          <Typography sx={{ fontFamily: fonts.display, color: brand.canvas, fontSize: '2.7rem', fontWeight: 700, lineHeight: 1.08, mt: 1.5 }}>
             Turn sensitive conversations into safe, reusable business data.
           </Typography>
-          <Box sx={{ mt: 3, p: 2, borderRadius: 2, bgcolor: alpha('#FFFFFF', 0.04), border: `1px solid ${alpha('#94A3B8', 0.15)}` }}>
-            <Typography sx={{ color: '#CBD5E1', fontSize: '0.95rem', lineHeight: 2 }}>
+
+          <Box sx={{ position: 'relative', mt: 4, p: 2.75, pt: 2.25, bgcolor: brand.canvas, backgroundImage: GRAIN, transform: 'rotate(-1deg)', boxShadow: '0 18px 40px rgba(0,0,0,0.45)' }}>
+            <Typography sx={{ fontFamily: fonts.mono, fontSize: '0.64rem', letterSpacing: '0.14em', color: '#6E685D', mb: 1 }}>
+              TRANSCRIPT · EXCERPT · SPEAKER B
+            </Typography>
+            <Typography sx={{ color: brand.ink, fontSize: '1.02rem', lineHeight: 2.1 }}>
               “Hi, my name is <RedactionMarker entity="PERSON_NAME" /> and my card number is <RedactionMarker entity="CREDIT_CARD_NUMBER" />.”
             </Typography>
+            <Box sx={{ position: 'absolute', right: 18, top: -14 }}>
+              <Stamp color={brand.signalDeep} tilt large>
+                Redacted
+              </Stamp>
+            </Box>
           </Box>
-          <Stack spacing={2.5} sx={{ mt: 4 }}>
-            <Feature icon={<ShieldRounded />} title="Protected by AssemblyAI" text="Transcription, speaker separation and PII redaction for both transcript and audio." />
-            <Feature icon={<VerifiedUserRounded />} title="Only safe artifacts are archived" text="Raw uploads are deleted after transfer. Your archive holds redacted audio, redacted text and statistics." />
-            <Feature icon={<AutoAwesomeRounded />} title="AI insights on safe data" text="Summaries, sentiment, topics and action items generated from the redacted transcript only." />
+
+          <Stack sx={{ mt: 4.5 }}>
+            {[
+              ['01', 'Protected by AssemblyAI', 'Transcription, speaker separation and PII redaction for the transcript and the audio.'],
+              ['02', 'Only safe artifacts are archived', 'Raw audio is deleted after transfer. The archive holds redacted audio, redacted text and statistics.'],
+              ['03', 'AI insights on safe data', 'Summaries, sentiment and topics, generated from the redacted transcript only.'],
+            ].map(([n, title, text]) => (
+              <Stack key={n} direction="row" spacing={2} sx={{ py: 1.4, borderTop: `1px solid ${alpha(brand.canvas, 0.14)}` }}>
+                <Typography sx={{ fontFamily: fonts.mono, fontSize: '0.78rem', color: brand.signal, pt: '2px', width: 22 }}>{n}</Typography>
+                <Box>
+                  <Typography sx={{ fontWeight: 600, color: brand.canvas }}>{title}</Typography>
+                  <Typography sx={{ fontSize: '0.86rem', color: '#9C9486', lineHeight: 1.5 }}>{text}</Typography>
+                </Box>
+              </Stack>
+            ))}
           </Stack>
         </Box>
-        <Typography sx={{ color: '#64748B', fontSize: '0.75rem' }}>
-          Hackathon prototype. Automated redaction is not a compliance certification.
+        <Typography sx={{ fontFamily: fonts.mono, color: '#6E685D', fontSize: '0.66rem', letterSpacing: '0.06em' }}>
+          HACKATHON PROTOTYPE · AUTOMATED REDACTION IS NOT A COMPLIANCE CERTIFICATION
         </Typography>
       </Box>
 

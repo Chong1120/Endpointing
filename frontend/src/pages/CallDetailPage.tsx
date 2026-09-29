@@ -34,7 +34,7 @@ import { useApiQuery } from '../hooks/useApiQuery';
 import { useCan, useMe } from '../hooks/useMe';
 import { useNotify } from '../hooks/useNotify';
 import { api, ApiError } from '../services/api';
-import { brand } from '../theme';
+import { brand, fonts } from '../theme';
 import { IN_PROGRESS, PRESET_LABELS, formatDateTime, formatDuration, languageName, modelLabel } from '../utils/format';
 
 function Fact({ label, value, ok }: { label: string; value: ReactNode; ok?: boolean }) {
@@ -121,8 +121,13 @@ export function CallDetailPage() {
           </Button>
         }
         title={
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <span>{call.reference}</span>
+          <Stack direction="row" spacing={2.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>
+              <Box component="span" sx={{ fontFamily: fonts.mono, fontSize: '0.5em', fontWeight: 500, letterSpacing: '0.14em', color: 'text.secondary', mr: 1.25, verticalAlign: 'middle' }}>
+                FILE No.
+              </Box>
+              {call.reference}
+            </span>
             <StatusBadge status={call.status} large />
           </Stack>
         }
@@ -166,14 +171,14 @@ export function CallDetailPage() {
       <Card sx={{ mb: 2.5, overflow: 'hidden' }}>
         <Grid container>
           <Grid size={{ xs: 12, md: 3 }} sx={{ p: 3, bgcolor: brand.ink, color: '#fff' }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: brand.tealBright }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: brand.signal }}>
               <ShieldRounded fontSize="small" />
-              <Typography variant="overline" sx={{ color: brand.tealBright }}>
+              <Typography variant="overline" sx={{ color: brand.signal }}>
                 Protected
               </Typography>
             </Stack>
             <Typography sx={{ fontSize: '3rem', fontWeight: 750, lineHeight: 1.05, mt: 1, letterSpacing: '-0.02em' }}>{call.pii_total}</Typography>
-            <Typography sx={{ color: '#CBD5E1' }}>PII {call.pii_total === 1 ? 'entity' : 'entities'} protected</Typography>
+            <Typography sx={{ color: '#CFC8BA' }}>PII {call.pii_total === 1 ? 'entity' : 'entities'} protected</Typography>
           </Grid>
           <Grid size={{ xs: 12, md: 5 }} sx={{ p: 3, borderRight: { md: 1 }, borderColor: { md: 'divider' } }}>
             <Typography variant="overline" color="text.secondary">
@@ -237,7 +242,7 @@ export function CallDetailPage() {
               {call.ai_summary ? (
                 <InsightsPanel analysis={call.ai_summary} />
               ) : (
-                <Box sx={{ p: 2, borderRadius: 2, bgcolor: alpha(brand.teal, 0.04) }}>
+                <Box sx={{ p: 2, borderRadius: 2, bgcolor: alpha(brand.signalDeep, 0.04) }}>
                   <Typography variant="body2" color="text.secondary">
                     {!call.analysis_enabled
                       ? 'AI analysis was turned off for this call.'

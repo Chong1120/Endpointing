@@ -60,8 +60,8 @@ export function DemoBar() {
         px: 2,
         py: 1.25,
         borderRadius: 2,
-        border: `1px solid ${alpha(brand.teal, 0.25)}`,
-        bgcolor: alpha(brand.teal, 0.06),
+        border: `1px solid ${alpha(brand.signalDeep, 0.25)}`,
+        bgcolor: alpha(brand.signalDeep, 0.06),
       }}
     >
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>

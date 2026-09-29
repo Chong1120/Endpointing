@@ -72,7 +72,7 @@ export const SafeAudioPlayer = forwardRef<SafeAudioHandle, {
           </Typography>
         </Stack>
         <Stack direction="row" spacing={0.75}>
-          <Chip size="small" icon={<LockRounded />} label="PII silenced" sx={{ bgcolor: alpha(brand.teal, 0.08), color: 'primary.dark', '& .MuiChip-icon': { color: 'primary.main' } }} />
+          <Chip size="small" icon={<LockRounded />} label="PII silenced" sx={{ bgcolor: alpha(brand.signalDeep, 0.08), color: 'primary.dark', '& .MuiChip-icon': { color: 'primary.main' } }} />
           {expiresIn !== null && (
             <Tooltip title="Playback uses a signed URL from a private bucket. Each access is recorded in the audit trail.">
               <Chip size="small" label={`Signed URL · ${Math.round(expiresIn / 60)} min`} variant="outlined" />
@@ -116,7 +116,7 @@ export const SafeAudioPlayer = forwardRef<SafeAudioHandle, {
           <Box
             role="img"
             aria-label="Timeline of transcript segments; dark segments contained redacted PII"
-            sx={{ position: 'relative', height: 14, borderRadius: 1, bgcolor: '#F1F5F9', overflow: 'hidden' }}
+            sx={{ position: 'relative', height: 14, borderRadius: 1, bgcolor: '#EEE9DF', overflow: 'hidden' }}
           >
             {utterances.map((u) => {
               const redacted = HAS_MARKER.test(u.text);
@@ -138,16 +138,16 @@ export const SafeAudioPlayer = forwardRef<SafeAudioHandle, {
                       width: `max(3px, calc(${((u.end_ms - u.start_ms) / totalMs) * 100}% - 2px))`,
                       borderRadius: '3px',
                       cursor: 'pointer',
-                      bgcolor: redacted ? brand.redaction : alpha(brand.teal, 0.28),
+                      bgcolor: redacted ? brand.redaction : '#CFC8BA',
                     }}
                   />
                 </Tooltip>
               );
             })}
-            <Box sx={{ position: 'absolute', top: 0, bottom: 0, width: 2, bgcolor: brand.tealBright, left: `${Math.min(100, (currentMs / totalMs) * 100)}%`, pointerEvents: 'none' }} />
+            <Box sx={{ position: 'absolute', top: 0, bottom: 0, width: 2, bgcolor: brand.signal, left: `${Math.min(100, (currentMs / totalMs) * 100)}%`, pointerEvents: 'none' }} />
           </Box>
           <Stack direction="row" spacing={2} sx={{ mt: 0.75 }}>
-            <Legend color={alpha(brand.teal, 0.28)} label="Speech" />
+            <Legend color="#CFC8BA" label="Speech" />
             <Legend color={brand.redaction} label="Segment with silenced PII" />
           </Stack>
         </Box>

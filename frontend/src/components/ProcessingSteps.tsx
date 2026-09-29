@@ -73,7 +73,7 @@ export function ProcessingSteps({ call, audit }: { call: Call; audit: AuditEvent
             <Stack sx={{ alignItems: 'center' }}>
               <StepIcon state={state} />
               {!isLast && (
-                <Box sx={{ width: 2, flex: 1, minHeight: 18, my: 0.5, borderRadius: 1, bgcolor: state === 'done' ? alpha(brand.teal, 0.45) : 'divider' }} />
+                <Box sx={{ width: 2, flex: 1, minHeight: 18, my: 0.5, borderRadius: 1, bgcolor: state === 'done' ? alpha(brand.signalDeep, 0.45) : 'divider' }} />
               )}
             </Stack>
             <Box sx={{ pb: isLast ? 0 : 2.25, pt: 0.35, minWidth: 0, flex: 1 }}>
@@ -130,7 +130,7 @@ function StepIcon({ state }: { state: StepState }) {
   }
   if (state === 'active') {
     return (
-      <Box sx={{ ...base, border: '2px solid', borderColor: alpha(brand.teal, 0.3) }} aria-label="in progress">
+      <Box sx={{ ...base, border: '2px solid', borderColor: alpha(brand.signalDeep, 0.3) }} aria-label="in progress">
         <CircularProgress size={16} thickness={6} />
       </Box>
     );

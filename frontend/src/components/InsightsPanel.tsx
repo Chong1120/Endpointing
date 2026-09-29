@@ -68,7 +68,7 @@ export function InsightsPanel({ analysis }: { analysis: CallAnalysis }) {
       <Field label="Topics">
         <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 0.75 }}>
           {analysis.topics.map((topic) => (
-            <Chip key={topic} size="small" label={topic} sx={{ bgcolor: '#EEF2F6' }} />
+            <Chip key={topic} size="small" label={topic} sx={{ bgcolor: '#E9E4D9' }} />
           ))}
         </Stack>
       </Field>
@@ -117,7 +117,7 @@ export function InsightsPanel({ analysis }: { analysis: CallAnalysis }) {
       <Stack
         direction="row"
         spacing={1}
-        sx={{ alignItems: 'center', p: 1.25, borderRadius: 2, bgcolor: alpha(brand.teal, 0.06), color: 'primary.dark' }}
+        sx={{ alignItems: 'center', p: 1.25, borderRadius: 2, bgcolor: alpha(brand.signalDeep, 0.06), color: 'primary.dark' }}
       >
         <AutoAwesomeRounded sx={{ fontSize: 16 }} />
         <Typography variant="caption" sx={{ fontWeight: 500 }}>

@@ -22,12 +22,12 @@ export function PipelineBanner({ states }: { states: PhaseState[] }) {
   return (
     <Stack
       direction={{ xs: 'column', md: 'row' }}
-      sx={{ alignItems: { md: 'center' }, gap: 1, p: 2, borderRadius: 3, bgcolor: brand.ink, color: '#CBD5E1' }}
+      sx={{ alignItems: { md: 'center' }, gap: 1, p: 2, borderRadius: 3, bgcolor: brand.ink, color: '#CFC8BA' }}
     >
       {PHASES.map((phase, index) => {
         const state = states[index] ?? 'pending';
         const color =
-          state === 'done' ? brand.tealBright : state === 'active' ? '#FFFFFF' : state === 'failed' ? '#FCA5A5' : '#64748B';
+          state === 'done' ? brand.signal : state === 'active' ? '#FFFFFF' : state === 'failed' ? '#FCA5A5' : '#6E685D';
         return (
           <Stack key={phase.label} direction="row" sx={{ alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
             <Stack
@@ -41,29 +41,29 @@ export function PipelineBanner({ states }: { states: PhaseState[] }) {
                 py: 1.1,
                 borderRadius: 2,
                 border: '1px solid',
-                borderColor: state === 'active' ? alpha(brand.tealBright, 0.7) : state === 'done' ? alpha(brand.tealBright, 0.3) : 'rgba(148,163,184,0.2)',
-                bgcolor: state === 'done' ? alpha(brand.tealBright, 0.1) : state === 'active' ? alpha(brand.tealBright, 0.16) : 'transparent',
+                borderColor: state === 'active' ? alpha(brand.signal, 0.7) : state === 'done' ? alpha(brand.signal, 0.3) : 'rgba(148,163,184,0.2)',
+                bgcolor: state === 'done' ? alpha(brand.signal, 0.1) : state === 'active' ? alpha(brand.signal, 0.16) : 'transparent',
                 ...(state === 'active' && {
                   animation: 'safecallPulse 1.8s ease-in-out infinite',
                   '@keyframes safecallPulse': {
-                    '0%, 100%': { boxShadow: `0 0 0 0 ${alpha(brand.tealBright, 0.35)}` },
-                    '50%': { boxShadow: `0 0 0 5px ${alpha(brand.tealBright, 0)}` },
+                    '0%, 100%': { boxShadow: `0 0 0 0 ${alpha(brand.signal, 0.35)}` },
+                    '50%': { boxShadow: `0 0 0 5px ${alpha(brand.signal, 0)}` },
                   },
                 }),
               }}
             >
               <Box sx={{ color, display: 'grid', placeItems: 'center', '& svg': { fontSize: 20 } }}>{phase.icon}</Box>
               <Box sx={{ minWidth: 0 }}>
-                <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.05em', lineHeight: 1.3, textTransform: 'uppercase', color: state === 'pending' ? '#94A3B8' : '#F8FAFC' }}>
+                <Typography sx={{ fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.05em', lineHeight: 1.3, textTransform: 'uppercase', color: state === 'pending' ? '#9C9486' : '#F6F2EA' }}>
                   {phase.label}
                 </Typography>
-                <Typography sx={{ fontSize: '0.72rem', color: '#94A3B8' }} noWrap>
+                <Typography sx={{ fontSize: '0.72rem', color: '#9C9486' }} noWrap>
                   {state === 'failed' ? 'Stopped — see details' : phase.caption}
                 </Typography>
               </Box>
             </Stack>
             {index < PHASES.length - 1 && (
-              <ArrowForwardRounded sx={{ display: { xs: 'none', md: 'block' }, fontSize: 18, color: states[index] === 'done' ? brand.tealBright : '#475569' }} />
+              <ArrowForwardRounded sx={{ display: { xs: 'none', md: 'block' }, fontSize: 18, color: states[index] === 'done' ? brand.signal : '#475569' }} />
             )}
           </Stack>
         );

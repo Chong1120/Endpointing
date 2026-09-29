@@ -43,7 +43,7 @@ export function TranscriptView({
               p: 1.25,
               borderRadius: 2,
               transition: 'background-color 120ms',
-              bgcolor: active ? alpha(brand.tealBright, 0.1) : 'transparent',
+              bgcolor: active ? alpha(brand.signal, 0.1) : 'transparent',
             }}
           >
             <Box
@@ -56,7 +56,7 @@ export function TranscriptView({
                 placeItems: 'center',
                 fontSize: '0.8rem',
                 fontWeight: 700,
-                bgcolor: isAgent ? alpha(brand.teal, 0.12) : '#EEF2F6',
+                bgcolor: isAgent ? alpha(brand.signalDeep, 0.12) : '#E9E4D9',
                 color: isAgent ? 'primary.dark' : '#334155',
               }}
             >

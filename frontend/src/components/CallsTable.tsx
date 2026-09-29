@@ -79,7 +79,7 @@ export function CallsTable({ items, compact = false }: { items: CallListItem[]; 
                     <TableCell>
                       <Stack direction="row" sx={{ gap: 0.5, flexWrap: 'wrap', maxWidth: 240 }}>
                         {call.topics.slice(0, 3).map((topic) => (
-                          <Chip key={topic} label={topic} size="small" sx={{ bgcolor: '#EEF2F6' }} />
+                          <Chip key={topic} label={topic} size="small" sx={{ bgcolor: '#E9E4D9' }} />
                         ))}
                       </Stack>
                     </TableCell>

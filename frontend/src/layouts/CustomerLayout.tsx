@@ -20,13 +20,13 @@ export function CustomerLayout() {
   const onHome = useLocation().pathname === '/';
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#F6F8FA' }}>
-      <Box sx={{ bgcolor: brand.ink, color: '#E2E8F0' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: brand.canvas }}>
+      <Box sx={{ bgcolor: brand.ink, color: '#E4DED2' }}>
         <Container maxWidth="lg">
           <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', py: 1.75, gap: 2 }}>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
               <Logo inverted small />
-              <Typography noWrap sx={{ color: '#94A3B8', fontSize: '0.8rem', display: { xs: 'none', sm: 'block' } }}>
+              <Typography noWrap sx={{ color: '#9C9486', fontSize: '0.8rem', display: { xs: 'none', sm: 'block' } }}>
                 Customer line
               </Typography>
             </Stack>
@@ -35,14 +35,14 @@ export function CustomerLayout() {
                 size="small"
                 icon={<ShieldRounded sx={{ fontSize: 15 }} />}
                 label="Northwind Mobile demo"
-                sx={{ bgcolor: alpha(brand.tealBright, 0.12), color: brand.tealBright, '& .MuiChip-icon': { color: brand.tealBright }, display: { xs: 'none', sm: 'flex' } }}
+                sx={{ bgcolor: alpha(brand.signal, 0.12), color: brand.signal, '& .MuiChip-icon': { color: brand.signal }, display: { xs: 'none', sm: 'flex' } }}
               />
               {!onHome && (
-                <Button component={RouterLink} to="/" size="small" sx={{ color: '#CBD5E1' }}>
+                <Button component={RouterLink} to="/" size="small" sx={{ color: '#CFC8BA' }}>
                   Back
                 </Button>
               )}
-              <Button size="small" startIcon={<LogoutRounded />} onClick={() => void signOut()} sx={{ color: '#94A3B8' }}>
+              <Button size="small" startIcon={<LogoutRounded />} onClick={() => void signOut()} sx={{ color: '#9C9486' }}>
                 {session?.user.email ? 'Sign out' : 'Leave'}
               </Button>
             </Stack>

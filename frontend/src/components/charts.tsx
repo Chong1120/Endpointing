@@ -25,13 +25,13 @@ import { SectionCard } from './common';
  * Text always uses text tokens, never a series color.
  */
 export const CHART = {
-  mark: '#0D9488',
-  markHover: '#0B7F75',
-  grid: '#EDF1F5',
-  baseline: '#CBD5E1',
-  negative: '#E34948',
-  neutral: '#A8A69E',
-  positive: '#2A78D6',
+  mark: '#141414',
+  markHover: '#D9480F',
+  grid: '#E4DED2',
+  baseline: '#CFC8BA',
+  negative: '#D9480F',
+  neutral: '#B8AF9E',
+  positive: '#1F3A5F',
 };
 
 interface TableData {
@@ -294,7 +294,7 @@ export function SentimentBar({ counts }: { counts: { positive: number; neutral: 
                 }}
               >
                 {pct(s.value) >= 18 && (
-                  <Typography variant="caption" sx={{ color: s.key === 'neutral' ? '#0F172A' : '#FFFFFF', fontWeight: 700 }}>
+                  <Typography variant="caption" sx={{ color: s.key === 'neutral' ? '#141414' : '#FFFFFF', fontWeight: 700 }}>
                     {pct(s.value)}%
                   </Typography>
                 )}

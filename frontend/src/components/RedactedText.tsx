@@ -1,8 +1,7 @@
-import LockRounded from '@mui/icons-material/LockRounded';
 import { Box, Tooltip } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { Fragment } from 'react';
-import { brand } from '../theme';
+import { brand, fonts } from '../theme';
 import { entityLabel } from '../utils/format';
 
 const MARKER = /^\[[A-Z][A-Z0-9_]*\]$/;
@@ -16,7 +15,11 @@ const WORD = '(?:⟦?[A-Z0-9]+⟧?)';
 const CUT_START = new RegExp(`(^|[^\\[A-Z0-9_⟦⟧])(${WORD}(?:_${WORD})+)\\]`, 'g');
 const CUT_END = new RegExp(`\\[(${WORD}(?:_${WORD})*)(?=$|[^\\]A-Z0-9_⟦⟧])`, 'g');
 
-/** A redaction marker such as [PHONE_NUMBER], rendered as a redaction bar. */
+/**
+ * A redaction marker such as [PHONE_NUMBER], drawn the way redaction looks on
+ * paper: a solid ink bar. The entity type is stamped faintly inside it, so the
+ * bar still says what was removed.
+ */
 export function RedactionMarker({ entity }: { entity: string }) {
   return (
     <Tooltip title={`${entityLabel(entity)} — detected and redacted by AssemblyAI. The original value was never stored.`}>
@@ -25,25 +28,23 @@ export function RedactionMarker({ entity }: { entity: string }) {
         tabIndex={0}
         aria-label={`Redacted ${entityLabel(entity)}`}
         sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0.4,
-          px: 0.75,
-          py: '1px',
-          mx: 0.25,
-          borderRadius: '5px',
+          display: 'inline-block',
+          px: '0.7em',
+          mx: '0.15em',
+          borderRadius: '1px',
           bgcolor: brand.redaction,
-          color: '#E2E8F0',
-          fontSize: '0.72em',
-          fontWeight: 650,
-          letterSpacing: '0.04em',
-          lineHeight: 1.6,
-          verticalAlign: '0.06em',
+          color: '#A89F8E',
+          fontFamily: fonts.mono,
+          fontSize: '0.62em',
+          fontWeight: 500,
+          letterSpacing: '0.1em',
+          lineHeight: '1.9',
+          verticalAlign: '0.12em',
           whiteSpace: 'nowrap',
           cursor: 'help',
+          '&:hover, &:focus-visible': { color: brand.signal, outline: 'none' },
         }}
       >
-        <LockRounded sx={{ fontSize: '1.1em', color: brand.tealBright }} />
         {entity.replace(/_/g, ' ')}
       </Box>
     </Tooltip>
@@ -73,7 +74,7 @@ export function RedactedText({ text }: { text: string }) {
             <Box
               key={index}
               component="mark"
-              sx={{ bgcolor: alpha(brand.tealBright, 0.22), color: 'inherit', borderRadius: '3px', px: '2px' }}
+              sx={{ bgcolor: alpha(brand.signal, 0.3), color: 'inherit', borderRadius: '1px', px: '2px' }}
             >
               <RedactedText text={part.slice(1, -1)} />
             </Box>

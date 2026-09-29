@@ -88,7 +88,7 @@ export function StatCard({
     <Card
       sx={{
         height: '100%',
-        ...(accent && { background: `linear-gradient(135deg, ${brand.ink} 0%, #10312F 100%)`, borderColor: 'transparent', color: '#fff' }),
+        ...(accent && { background: brand.ink, borderColor: brand.ink, color: brand.canvas }),
       }}
     >
       <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
@@ -103,8 +103,8 @@ export function StatCard({
               width: 34,
               height: 34,
               borderRadius: 2,
-              bgcolor: accent ? alpha(brand.tealBright, 0.18) : alpha(brand.teal, 0.08),
-              color: accent ? brand.tealBright : 'primary.main',
+              bgcolor: accent ? alpha(brand.signal, 0.18) : alpha(brand.signalDeep, 0.08),
+              color: accent ? brand.signal : 'primary.main',
               '& svg': { fontSize: 19 },
             }}
           >
@@ -125,7 +125,7 @@ export function StatCard({
 export function EmptyState({ icon, title, description, action }: { icon: ReactNode; title: string; description: string; action?: ReactNode }) {
   return (
     <Stack spacing={1.5} sx={{ alignItems: 'center', textAlign: 'center', py: 6, px: 2 }}>
-      <Box sx={{ display: 'grid', placeItems: 'center', width: 56, height: 56, borderRadius: '50%', bgcolor: alpha(brand.teal, 0.08), color: 'primary.main', '& svg': { fontSize: 28 } }}>
+      <Box sx={{ display: 'grid', placeItems: 'center', width: 56, height: 56, borderRadius: '50%', bgcolor: alpha(brand.signalDeep, 0.08), color: 'primary.main', '& svg': { fontSize: 28 } }}>
         {icon}
       </Box>
       <Typography variant="h4">{title}</Typography>
@@ -162,9 +162,9 @@ export function RequirePermission({ permission, children }: { permission: Permis
 }
 
 const SENTIMENT_META: Record<Sentiment, { label: string; icon: ReactNode; color: string; bg: string }> = {
-  positive: { label: 'Positive', icon: <SentimentSatisfiedAltRounded />, color: '#15803D', bg: '#DCFCE7' },
-  neutral: { label: 'Neutral', icon: <SentimentNeutralRounded />, color: '#475569', bg: '#EEF2F6' },
-  negative: { label: 'Negative', icon: <SentimentDissatisfiedRounded />, color: '#B91C1C', bg: '#FEE2E2' },
+  positive: { label: 'Positive', icon: <SentimentSatisfiedAltRounded />, color: '#2F6B3F', bg: '#E1EBDC' },
+  neutral: { label: 'Neutral', icon: <SentimentNeutralRounded />, color: '#5B5549', bg: '#E9E4D9' },
+  negative: { label: 'Negative', icon: <SentimentDissatisfiedRounded />, color: '#B42318', bg: '#F5DCD4' },
 };
 
 export function SentimentChip({ sentiment }: { sentiment: Sentiment | null }) {
@@ -212,7 +212,7 @@ export function PiiBreakdown({ counts }: { counts: Record<string, number> }) {
           icon={<LockRounded />}
           label={`${entityLabel(type)} · ${count}`}
           variant="outlined"
-          sx={{ borderColor: alpha(brand.teal, 0.3), '& .MuiChip-icon': { color: 'primary.main', fontSize: 14 } }}
+          sx={{ borderColor: alpha(brand.signalDeep, 0.3), '& .MuiChip-icon': { color: 'primary.main', fontSize: 14 } }}
         />
       ))}
     </Stack>

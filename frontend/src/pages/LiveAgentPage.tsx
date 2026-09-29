@@ -70,7 +70,7 @@ function CallOrb({ stage, speaking, level }: { stage: Stage; speaking: SpeakingS
               position: 'absolute',
               inset: 0,
               borderRadius: '50%',
-              border: `2px solid ${brand.tealBright}`,
+              border: `2px solid ${brand.signal}`,
               animation: `${ripple} 1.4s ease-out ${delay}s infinite`,
               '@media (prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.4 },
             }}
@@ -81,7 +81,7 @@ function CallOrb({ stage, speaking, level }: { stage: Stage; speaking: SpeakingS
           position: 'absolute',
           inset: 10,
           borderRadius: '50%',
-          bgcolor: alpha(live ? brand.tealBright : '#94A3B8', live ? 0.16 : 0.08),
+          bgcolor: alpha(live ? brand.signal : '#9C9486', live ? 0.16 : 0.08),
           transform: `scale(${scale})`,
           transition: 'transform 120ms linear',
         }}
@@ -94,13 +94,13 @@ function CallOrb({ stage, speaking, level }: { stage: Stage; speaking: SpeakingS
           borderRadius: '50%',
           display: 'grid',
           placeItems: 'center',
-          bgcolor: live ? brand.teal : brand.inkSoft,
+          bgcolor: live ? brand.signalDeep : brand.inkSoft,
           border: `1px solid ${alpha('#FFFFFF', 0.12)}`,
           color: '#FFFFFF',
           '& svg': { fontSize: 46 },
         }}
       >
-        {stage === 'connecting' || stage === 'archiving' ? <CircularProgress size={42} sx={{ color: brand.tealBright }} /> : <HeadsetMicRounded />}
+        {stage === 'connecting' || stage === 'archiving' ? <CircularProgress size={42} sx={{ color: brand.signal }} /> : <HeadsetMicRounded />}
       </Box>
     </Box>
   );
@@ -110,7 +110,7 @@ function PrivacyStep({ icon, title, text }: { icon: ReactNode; title: string; te
   return (
     <Stack direction="row" spacing={1.5}>
       <Box
-        sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: alpha(brand.teal, 0.08), color: 'primary.main', '& svg': { fontSize: 18 } }}
+        sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: alpha(brand.signalDeep, 0.08), color: 'primary.main', '& svg': { fontSize: 18 } }}
       >
         {icon}
       </Box>
@@ -126,7 +126,7 @@ function PrivacyStep({ icon, title, text }: { icon: ReactNode; title: string; te
   );
 }
 
-const pillButton = { borderRadius: 999, px: 4, py: 1.25 };
+const pillButton = { borderRadius: '2px', px: 4, py: 1.25 };
 
 export function LiveAgentPage({
   variant = 'console',
@@ -292,7 +292,7 @@ export function LiveAgentPage({
             size="small"
             icon={<GraphicEqRounded />}
             label="Real time · AssemblyAI Voice Agent API"
-            sx={{ bgcolor: alpha(brand.teal, 0.08), color: 'primary.main', '& .MuiChip-icon': { color: 'primary.main' } }}
+            sx={{ bgcolor: alpha(brand.signalDeep, 0.08), color: 'primary.main', '& .MuiChip-icon': { color: 'primary.main' } }}
           />
         }
         title={customer ? 'Talk to us about your bill' : 'Live agent'}
@@ -305,28 +305,28 @@ export function LiveAgentPage({
 
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, lg: 7 }}>
-          <Card sx={{ bgcolor: brand.ink, border: 'none', color: '#E2E8F0' }}>
+          <Card sx={{ bgcolor: brand.ink, border: 'none', color: '#E4DED2' }}>
             <Stack sx={{ p: { xs: 2.5, md: 4 }, alignItems: 'center', textAlign: 'center', minHeight: { md: 540 } }}>
               <Stack direction="row" sx={{ width: '100%', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, textAlign: 'left' }}>
                 <Box>
-                  <Typography variant="overline" sx={{ color: brand.tealBright }}>
+                  <Typography variant="overline" sx={{ color: brand.signal }}>
                     Northwind Mobile · Billing
                   </Typography>
-                  <Typography sx={{ color: '#F8FAFC', fontWeight: 650, fontSize: '1.05rem' }}>Sam, AI support agent</Typography>
+                  <Typography sx={{ color: '#F6F2EA', fontWeight: 650, fontSize: '1.05rem' }}>Sam, AI support agent</Typography>
                 </Box>
                 <Chip
                   size="small"
                   label={stage === 'live' ? `${clock(elapsed)} / ${clock(limit)}` : `Up to ${Math.round(limit / 60)} min`}
-                  sx={{ bgcolor: alpha('#FFFFFF', 0.08), color: '#CBD5E1', fontVariantNumeric: 'tabular-nums' }}
+                  sx={{ bgcolor: alpha('#FFFFFF', 0.08), color: '#CFC8BA', fontVariantNumeric: 'tabular-nums' }}
                 />
               </Stack>
 
               <CallOrb stage={stage} speaking={speaking} level={level} />
 
-              <Typography variant="h3" component="p" sx={{ color: '#F8FAFC' }} aria-live="polite">
+              <Typography variant="h3" component="p" sx={{ color: '#F6F2EA' }} aria-live="polite">
                 {copy.title}
               </Typography>
-              <Typography variant="body2" sx={{ color: '#94A3B8', mt: 1, maxWidth: 440 }}>
+              <Typography variant="body2" sx={{ color: '#9C9486', mt: 1, maxWidth: 440 }}>
                 {copy.detail}
               </Typography>
 
@@ -337,7 +337,7 @@ export function LiveAgentPage({
                     variant="contained"
                     startIcon={<CallRounded />}
                     onClick={() => void startCall()}
-                    sx={{ ...pillButton, bgcolor: brand.tealBright, color: brand.ink, '&:hover': { bgcolor: '#2DD4BF' } }}
+                    sx={{ ...pillButton, bgcolor: brand.signal, color: brand.ink, '&:hover': { bgcolor: '#FF7A45' } }}
                   >
                     {stage === 'failed' ? 'Call again' : 'Start call'}
                   </Button>
@@ -348,13 +348,13 @@ export function LiveAgentPage({
                     variant="outlined"
                     startIcon={<CloudDoneRounded />}
                     onClick={() => void archive(unarchived)}
-                    sx={{ ...pillButton, color: '#E2E8F0', borderColor: alpha('#FFFFFF', 0.3) }}
+                    sx={{ ...pillButton, color: '#E4DED2', borderColor: alpha('#FFFFFF', 0.3) }}
                   >
                     Archive this call
                   </Button>
                 )}
                 {stage === 'connecting' && (
-                  <Button size="large" variant="outlined" onClick={() => callRef.current?.dispose()} sx={{ ...pillButton, color: '#E2E8F0', borderColor: alpha('#FFFFFF', 0.3) }}>
+                  <Button size="large" variant="outlined" onClick={() => callRef.current?.dispose()} sx={{ ...pillButton, color: '#E4DED2', borderColor: alpha('#FFFFFF', 0.3) }}>
                     Cancel
                   </Button>
                 )}
@@ -365,7 +365,7 @@ export function LiveAgentPage({
                 )}
               </Stack>
 
-              <Typography variant="caption" sx={{ color: '#64748B', mt: 'auto', pt: 4 }}>
+              <Typography variant="caption" sx={{ color: '#6E685D', mt: 'auto', pt: 4 }}>
                 Best in Chrome or Edge. Echo cancellation is on, so headphones are optional.
               </Typography>
             </Stack>

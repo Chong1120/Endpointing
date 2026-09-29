@@ -134,8 +134,8 @@ export function UploadPage() {
                 aria-label="Choose an audio file"
                 sx={{
                   border: '2px dashed',
-                  borderColor: dragging ? 'primary.main' : alpha(brand.teal, 0.3),
-                  bgcolor: dragging ? alpha(brand.teal, 0.06) : alpha(brand.teal, 0.02),
+                  borderColor: dragging ? 'primary.main' : alpha(brand.signalDeep, 0.3),
+                  bgcolor: dragging ? alpha(brand.signalDeep, 0.06) : alpha(brand.signalDeep, 0.02),
                   borderRadius: 3,
                   py: 5,
                   px: 3,
@@ -200,13 +200,13 @@ export function UploadPage() {
                       const selected = p.preset === preset;
                       return (
                         <Grid key={p.preset} size={{ xs: 12, sm: 6 }}>
-                          <Card sx={{ height: '100%', borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? alpha(brand.teal, 0.04) : undefined, boxShadow: selected ? `0 0 0 1px ${brand.teal}` : 'none' }}>
+                          <Card sx={{ height: '100%', borderColor: selected ? 'primary.main' : 'divider', bgcolor: selected ? alpha(brand.signalDeep, 0.04) : undefined, boxShadow: selected ? `0 0 0 1px ${brand.signalDeep}` : 'none' }}>
                             <CardActionArea onClick={() => setPreset(p.preset)} sx={{ p: 1.75, height: '100%', alignItems: 'flex-start', display: 'flex' }}>
                               <Radio checked={selected} size="small" sx={{ p: 0.25, mr: 1 }} tabIndex={-1} />
                               <Box>
                                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                                   <Typography sx={{ fontWeight: 650 }}>{p.label}</Typography>
-                                  <Chip size="small" label={`${p.policies.length} types`} sx={{ bgcolor: '#EEF2F6' }} />
+                                  <Chip size="small" label={`${p.policies.length} types`} sx={{ bgcolor: '#E9E4D9' }} />
                                   {p.customized && <Chip size="small" label="Customized" color="primary" variant="outlined" />}
                                 </Stack>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, lineHeight: 1.5 }}>

@@ -89,7 +89,7 @@ export function ProcessingPage() {
         <Grid size={{ xs: 12, md: 5 }}>
           <Stack spacing={2.5}>
             {call?.status === 'COMPLETED' && (
-              <Card sx={{ borderColor: alpha(brand.teal, 0.4), background: `linear-gradient(180deg, ${alpha(brand.teal, 0.07)}, #fff 70%)` }}>
+              <Card sx={{ borderColor: alpha(brand.signalDeep, 0.4), background: brand.sheet }}>
                 <CardContent sx={{ p: 3 }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'success.main' }}>
                     <VerifiedUserRounded />

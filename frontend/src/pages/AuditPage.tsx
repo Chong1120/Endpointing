@@ -76,7 +76,7 @@ export function AuditPage() {
                     <TableCell sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatDateTime(event.created_at)}</TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: event.event_type === 'PROCESSING_FAILED' ? 'error.main' : brand.teal, flexShrink: 0 }} />
+                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: event.event_type === 'PROCESSING_FAILED' ? 'error.main' : brand.signalDeep, flexShrink: 0 }} />
                         <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
                           {auditLabel(event.event_type)}
                         </Typography>
@@ -94,7 +94,7 @@ export function AuditPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Chip size="small" label={event.actor_id ? (event.actor_id === me?.user.id ? 'You' : 'User') : 'System'} sx={{ bgcolor: '#F1F5F9' }} />
+                      <Chip size="small" label={event.actor_id ? (event.actor_id === me?.user.id ? 'You' : 'User') : 'System'} sx={{ bgcolor: '#EEE9DF' }} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">

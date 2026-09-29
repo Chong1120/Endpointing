@@ -1,11 +1,19 @@
 import { Box, Stack, Typography } from '@mui/material';
-import { brand } from '../theme';
+import { brand, fonts } from '../theme';
 
-export function LogoMark({ size = 30 }: { size?: number }) {
+/**
+ * A page with one line redacted: what the product does, in 32 pixels.
+ * On dark backgrounds the page turns to paper and the text lines to ink.
+ */
+export function LogoMark({ size = 30, inverted = false }: { size?: number; inverted?: boolean }) {
+  const page = inverted ? brand.canvas : brand.ink;
+  const line = inverted ? brand.ink : brand.canvas;
   return (
     <Box component="svg" viewBox="0 0 32 32" sx={{ width: size, height: size, flexShrink: 0 }} aria-hidden>
-      <path fill={brand.teal} d="M16 2 4 7v8c0 7.2 5.1 13.9 12 15 6.9-1.1 12-7.8 12-15V7L16 2z" />
-      <path fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" d="m10.5 16.2 3.8 3.8 7.2-7.6" />
+      <rect x="3" y="2" width="26" height="28" rx="1.5" fill={page} />
+      <rect x="8" y="8" width="16" height="2.4" fill={line} opacity="0.85" />
+      <rect x="8" y="13.6" width="16" height="5.4" fill={brand.signal} />
+      <rect x="8" y="22.4" width="10" height="2.4" fill={line} opacity="0.85" />
     </Box>
   );
 }
@@ -13,13 +21,22 @@ export function LogoMark({ size = 30 }: { size?: number }) {
 export function Logo({ inverted = false, small = false }: { inverted?: boolean; small?: boolean }) {
   return (
     <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-      <LogoMark size={small ? 24 : 30} />
+      <LogoMark size={small ? 24 : 30} inverted={inverted} />
       <Box>
-        <Typography sx={{ fontWeight: 750, fontSize: small ? '1rem' : '1.15rem', letterSpacing: '-0.01em', color: inverted ? '#FFFFFF' : 'text.primary', lineHeight: 1.1 }}>
+        <Typography
+          sx={{
+            fontFamily: fonts.display,
+            fontWeight: 700,
+            fontSize: small ? '1.05rem' : '1.25rem',
+            letterSpacing: '0.005em',
+            color: inverted ? brand.canvas : 'text.primary',
+            lineHeight: 1.05,
+          }}
+        >
           SafeCall
         </Typography>
         {!small && (
-          <Typography sx={{ fontSize: '0.7rem', color: inverted ? '#94A3B8' : 'text.secondary', lineHeight: 1.3 }}>
+          <Typography sx={{ fontFamily: fonts.mono, fontSize: '0.55rem', letterSpacing: '0.06em', textTransform: 'uppercase', color: inverted ? '#9C9486' : 'text.secondary', lineHeight: 1.5 }}>
             Privacy-first call archive
           </Typography>
         )}

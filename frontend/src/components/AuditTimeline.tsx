@@ -7,8 +7,8 @@ const ACCESS_EVENTS = new Set(['SAFE_AUDIO_ACCESSED', 'DATASET_EXPORTED', 'RETRY
 
 function dotColor(type: string): string {
   if (type === 'PROCESSING_FAILED') return '#B91C1C';
-  if (ACCESS_EVENTS.has(type)) return '#94A3B8';
-  return brand.teal;
+  if (ACCESS_EVENTS.has(type)) return '#9C9486';
+  return brand.signalDeep;
 }
 
 /** Chronological audit trail for one call. Metadata is technical only (IDs, counts). */
@@ -41,7 +41,7 @@ export function AuditTimeline({ events, currentUserId }: { events: AuditEvent[];
                 </Typography>
               </Stack>
               <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mt: 0.25 }}>
-                <Chip label={actor} size="small" sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#F1F5F9' }} />
+                <Chip label={actor} size="small" sx={{ height: 18, fontSize: '0.65rem', bgcolor: '#EEE9DF' }} />
                 {detail && (
                   <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                     {detail}

@@ -25,7 +25,7 @@ import { IN_PROGRESS, numberFormat } from '../utils/format';
 function Guarantee({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return (
     <Stack direction="row" spacing={1.5}>
-      <Box sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: alpha(brand.teal, 0.08), color: 'primary.main', '& svg': { fontSize: 18 } }}>
+      <Box sx={{ width: 32, height: 32, flexShrink: 0, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: alpha(brand.signalDeep, 0.08), color: 'primary.main', '& svg': { fontSize: 18 } }}>
         {icon}
       </Box>
       <Box>

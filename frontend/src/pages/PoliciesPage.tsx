@@ -93,7 +93,7 @@ export function PoliciesPage() {
             {(policies.data?.presets ?? []).map((preset) => {
               const active = preset.preset === selected;
               return (
-                <Card key={preset.preset} sx={{ borderColor: active ? 'primary.main' : 'divider', boxShadow: active ? `0 0 0 1px ${brand.teal}` : 'none', bgcolor: active ? alpha(brand.teal, 0.04) : undefined }}>
+                <Card key={preset.preset} sx={{ borderColor: active ? 'primary.main' : 'divider', boxShadow: active ? `0 0 0 1px ${brand.signalDeep}` : 'none', bgcolor: active ? alpha(brand.signalDeep, 0.04) : undefined }}>
                   <CardActionArea onClick={() => setSelected(preset.preset)} sx={{ p: 2 }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                       <PolicyRounded sx={{ color: 'primary.main', fontSize: 20 }} />
