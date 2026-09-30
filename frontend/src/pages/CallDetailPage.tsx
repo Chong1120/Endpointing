@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link as RouterLink, useNavigate, useParams } from 'react-router';
+import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router';
 import { AuditTimeline } from '../components/AuditTimeline';
 import { InsightsPanel } from '../components/InsightsPanel';
 import { PageHeader, PiiBreakdown, SectionCard } from '../components/common';
@@ -53,9 +53,27 @@ function Fact({ label, value, ok }: { label: string; value: ReactNode; ok?: bool
   );
 }
 
+/** Pages that open a call and pass `state={{ from }}`, so "back" returns to them. */
+const BACK_TARGETS: Record<string, string> = { '/escalations': 'Escalations', '/audit': 'Audit trail' };
+
+/**
+ * Where "back" goes: the page that opened this call, otherwise the list this
+ * role can see. A support agent has the escalations queue, not the archive.
+ */
+function useBackLink(): { to: string; label: string } {
+  const from = (useLocation().state as { from?: unknown } | null)?.from;
+  const canBrowse = useCan('calls:browse');
+  const canQueue = useCan('followups:read');
+  if (typeof from === 'string' && BACK_TARGETS[from]) return { to: from, label: BACK_TARGETS[from] };
+  if (canBrowse) return { to: '/calls', label: 'Calls' };
+  if (canQueue) return { to: '/escalations', label: 'Escalations' };
+  return { to: '/', label: 'Home' };
+}
+
 export function CallDetailPage() {
   const { id = '' } = useParams();
   const me = useMe();
+  const back = useBackLink();
   const canDelete = useCan('calls:delete');
   const canRetry = useCan('calls:upload');
   const navigate = useNavigate();
@@ -91,7 +109,7 @@ export function CallDetailPage() {
     try {
       await api.deleteCall(id);
       notify('Call and its safe recording were deleted.');
-      navigate('/calls');
+      navigate(back.to);
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Delete failed.', 'error');
       setBusy(false);
@@ -116,8 +134,8 @@ export function CallDetailPage() {
     <>
       <PageHeader
         eyebrow={
-          <Button component={RouterLink} to="/calls" size="small" startIcon={<ArrowBackRounded />} sx={{ ml: -1 }}>
-            Calls
+          <Button component={RouterLink} to={back.to} size="small" startIcon={<ArrowBackRounded />} sx={{ ml: -1 }}>
+            {back.label}
           </Button>
         }
         title={

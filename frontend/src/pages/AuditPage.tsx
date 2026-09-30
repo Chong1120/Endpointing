@@ -84,7 +84,7 @@ export function AuditPage() {
                     </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>
                       {event.call_id && event.call_number ? (
-                        <Link component={RouterLink} to={`/calls/${event.call_id}`} underline="hover" sx={{ fontWeight: 600 }}>
+                        <Link component={RouterLink} to={`/calls/${event.call_id}`} state={{ from: '/audit' }} underline="hover" sx={{ fontWeight: 600 }}>
                           CALL-{event.call_number}
                         </Link>
                       ) : (

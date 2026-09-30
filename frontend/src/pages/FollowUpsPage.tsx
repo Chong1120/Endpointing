@@ -42,7 +42,7 @@ function FollowUpRow({ item, onResolved }: { item: FollowUp; onResolved: (id: st
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'center' } }}>
         <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography variant="subtitle2" component={RouterLink} to={`/calls/${item.id}`} sx={{ fontWeight: 700, textDecoration: 'none', color: 'primary.main' }}>
+            <Typography variant="subtitle2" component={RouterLink} to={`/calls/${item.id}`} state={{ from: '/escalations' }} sx={{ fontWeight: 700, textDecoration: 'none', color: 'primary.main' }}>
               {item.reference}
             </Typography>
             <Chip size="small" color="warning" variant="outlined" label={reasonLabel(item.reason)} />
@@ -62,7 +62,7 @@ function FollowUpRow({ item, onResolved }: { item: FollowUp; onResolved: (id: st
           )}
         </Stack>
         <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-          <Button component={RouterLink} to={`/calls/${item.id}`} size="small" variant="outlined">
+          <Button component={RouterLink} to={`/calls/${item.id}`} state={{ from: '/escalations' }} size="small" variant="outlined">
             Open call
           </Button>
           {canResolve && (
