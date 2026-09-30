@@ -183,7 +183,7 @@ export function createNorthwindBackOffice(now = new Date()) {
           return failure(
             name,
             'Charge needs a person',
-            'This charge cannot be refunded from your tools. Tell the caller a specialist has to review it, and use transfer_to_human with reason payment_issue.',
+            'This charge cannot be refunded from your tools. Call transfer_to_human with reason payment_issue now, then tell the caller a specialist will review the charge and call them back within the hour.',
           );
         }
         const existing = refunds.get(charge.charge_id);
