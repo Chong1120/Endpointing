@@ -130,7 +130,7 @@ All parameters were checked against the live docs ([agent instructions](https://
 - **LLM Gateway.** Calls `https://llm-gateway.assemblyai.com/v1/chat/completions` with the prompt rules from the spec, `post_processing_steps: json-repair`, and zod validation.
   - Models that support `response_format` get a strict JSON Schema.
   - Models without it get the same schema in the prompt. `LLM_RESPONSE_FORMAT=auto` checks the gateway's `/v1/models`.
-- **A second pass over the result.** Redaction is good, not perfect: a stuttered phone number or "the security code is 123" can survive it. Every archived call is re-scanned by a deliberately conservative detector (`backend/src/services/redactionCheck.ts`). If it finds something, the recording goes back to AssemblyAI with those exact strings as `redact_static_entities`, and the transcript, the audio and the PII counts are replaced with the cleaner result — recorded as `EXTRA_PII_REDACTED`. Nothing is found on most calls, and nothing is changed when nothing is found.
+- **A second pass over the result.** Redaction is good, not perfect: a stuttered phone number, "the security code is 123" or a spoken date of birth can survive it. Every call is re-scanned by a deliberately conservative detector (`backend/src/services/redactionCheck.ts`) once its safe audio is stored, before the AI analysis runs and before the call counts as complete. If it finds something, the recording goes back to AssemblyAI with those exact strings as `redact_static_entities`, and the transcript, the audio and the PII counts are replaced with the cleaner result — recorded as `EXTRA_PII_REDACTED`. It only looks for entity types the call's PII policy selects, so a type an admin turned off stays visible. Nothing is found on most calls, and nothing is changed when nothing is found.
 - **No deprecated parameters.** `summarization`, `auto_chapters` and LeMUR are not used.
 
 **Voice Agent API** (`backend/src/services/assemblyai/voiceAgent.ts` and `liveAgent.ts`, `frontend/src/voice/`):
@@ -400,7 +400,7 @@ npm test            # both suites: API (AssemblyAI + LLM Gateway mocked) and the
 npm run typecheck   # backend + frontend
 ```
 
-149 tests. Coverage includes:
+159 tests. Coverage includes:
 - upload validation and temp-file cleanup;
 - authentication and organization isolation;
 - PII counting (including grouping of word-level markers);
@@ -411,10 +411,10 @@ npm run typecheck   # backend + frontend
 - LLM request shape, model fallback and AI JSON validation;
 - the live agent: token minting without exposing the API key, the organization check, waiting for the recording, archiving through the redaction pipeline, and deleting the AssemblyAI session;
 - the browser's side of the Voice Agent protocol: a tool result still goes out when the caller coughs after `reply.done`, is held during a reply, is dropped on a barge-in, and is never sent twice — plus the silence watchdog, which prods a stalled agent but leaves one waiting on its own question alone;
-- the leftover-PII detector and the second redaction pass, including that repeated passes never lower a call's PII counts;
+- the leftover-PII detector and the second redaction pass, including that repeated passes never lower a call's PII counts, that it only redacts the entity types the call's policy selects, and that it runs before the AI analysis so a missed value never reaches the model;
 - escalations: the handover reason is kept to a fixed list, the queue is scoped to the workspace, and closing one is limited to the roles that may;
 - roles: the exact permission list per role, a support agent held to their queue, and a customer who sees only their own calls;
-- the demo workspace: three personas in one workspace, no password reaching the browser, per-IP rate limiting, seeding, reset, and the daily live-call cap;
+- the demo workspace: three personas in one workspace, no password reaching the browser, sign-ins that never reset a password (so visitors can't sign each other out), per-IP rate limiting, seeding, reset, and the daily live-call cap;
 - audit sanitization, analytics and the export formats;
 - an end-to-end test: upload → AssemblyAI job → webhook → background processing → safe archive.
 
@@ -449,7 +449,7 @@ The pipeline was run end to end against real AssemblyAI (Universal-3.5 Pro), the
 
 ## Limitations
 
-- **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123", in the transcript or the audio, and adding `number_sequence` didn't catch it either. SafeCall's second pass catches that particular shape and re-redacts it, but a second pass is a safety net, not a guarantee: it only looks for patterns it knows. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
+- **Automated redaction is not perfect.** In our synthetic test call, AssemblyAI redacted the spoken card number and expiry, but it did **not** redact "the security code is 123", in the transcript or the audio, and adding `number_sequence` didn't catch it either. In a later run (30 September) a spoken date of birth, "March 14th. 1987", also came through the first pass with `date_of_birth` in the policy. SafeCall's second pass catches both shapes and re-redacts them, but a second pass is a safety net, not a guarantee: it only looks for patterns it knows. SafeCall shows exactly what was redacted and never claims completeness. Review policies against your own recordings and keep a human in the loop for high-risk data.
 - **The live agent's responsiveness is AssemblyAI's.** Replies took 5 to 9 seconds in our measurements and once 35, and a turn occasionally ends without the agent speaking. SafeCall prods a silent agent after seven seconds, which turns a dead call into a pause; it cannot make the service faster.
 - **The live agent hears the live call.** Like any voice agent, AssemblyAI processes the unredacted conversation while the call is happening. SafeCall's guarantee covers what is stored and reused afterwards, and the session is deleted once it is archived.
 - **Live agent calls need a browser with a microphone.** They are built for Chrome and Edge. Firefox and Safari use a resampling path that hasn't been tested yet. Calls are capped at 10 minutes.
