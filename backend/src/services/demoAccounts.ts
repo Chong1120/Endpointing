@@ -8,9 +8,19 @@ export interface DemoSession {
   expiresIn: number;
 }
 
+/** The token endpoint refused the email and password (as opposed to being unreachable). */
+export class DemoSignInRefused extends Error {}
+
 export interface DemoAccountService {
-  /** Creates the account if it does not exist (and resets the password if it does). Returns the user id. */
+  /** Creates the account if it does not exist. Never touches an existing account's password. Returns the user id. */
   ensureUser(email: string, password: string): Promise<string>;
+  /**
+   * Sets the password again, for when the secret it is derived from changed.
+   * Supabase signs the account out everywhere when its password changes, so
+   * this must stay a repair, never part of an ordinary sign-in.
+   */
+  resetPassword(email: string, password: string): Promise<void>;
+  /** Throws `DemoSignInRefused` when the password does not match. */
   signIn(email: string, password: string): Promise<DemoSession>;
 }
 
@@ -29,11 +39,7 @@ export class SupabaseDemoAccountService implements DemoAccountService {
 
   async ensureUser(email: string, password: string): Promise<string> {
     const existing = await this.findByEmail(email);
-    if (existing) {
-      // Keeps the account usable if the secret changed since it was created.
-      await this.db.auth.admin.updateUserById(existing, { password, email_confirm: true });
-      return existing;
-    }
+    if (existing) return existing;
     const { data, error } = await this.db.auth.admin.createUser({ email, password, email_confirm: true });
     if (error || !data.user) {
       // A parallel first request may have won the race.
@@ -42,6 +48,13 @@ export class SupabaseDemoAccountService implements DemoAccountService {
       throw new Error(`Could not create the demo account: ${error?.message ?? 'unknown error'}`);
     }
     return data.user.id;
+  }
+
+  async resetPassword(email: string, password: string): Promise<void> {
+    const id = await this.findByEmail(email);
+    if (!id) throw new Error('The demo account does not exist.');
+    const { error } = await this.db.auth.admin.updateUserById(id, { password, email_confirm: true });
+    if (error) throw new Error(`Could not reset the demo password: ${error.message}`);
   }
 
   /**
@@ -60,7 +73,8 @@ export class SupabaseDemoAccountService implements DemoAccountService {
       | { access_token?: string; refresh_token?: string; expires_in?: number; user?: { id?: string }; error_description?: string; msg?: string }
       | null;
     if (!response.ok || !body?.access_token || !body.refresh_token || !body.user?.id) {
-      throw new Error(`Demo sign-in failed (${response.status}): ${body?.error_description ?? body?.msg ?? 'no session'}`);
+      const message = `Demo sign-in failed (${response.status}): ${body?.error_description ?? body?.msg ?? 'no session'}`;
+      throw response.status === 400 ? new DemoSignInRefused(message) : new Error(message);
     }
     return {
       userId: body.user.id,

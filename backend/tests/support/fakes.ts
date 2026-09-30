@@ -28,7 +28,7 @@ import type {
   TranscriptResult,
 } from '../../src/services/assemblyai/transcription.js';
 import type { VoiceAgentService, VoiceSession } from '../../src/services/assemblyai/voiceAgent.js';
-import type { DemoAccountService } from '../../src/services/demoAccounts.js';
+import { DemoSignInRefused, type DemoAccountService } from '../../src/services/demoAccounts.js';
 import { RepositoryAuditLogger } from '../../src/services/audit.js';
 import type { AnalysisResult, AnalysisService } from '../../src/services/llm/analysis.js';
 import { FileSampleCatalog } from '../../src/services/samples.js';
@@ -444,26 +444,35 @@ export class InMemoryQueue implements JobQueue {
   async close() {}
 }
 
-/** Demo sign-in without Supabase: the access token is the email, which the fake verifier accepts. */
+/**
+ * Demo sign-in without Supabase: the access token is the email, which the fake
+ * verifier accepts. Like Supabase, resetting a password signs that account out,
+ * which the tests read from `resets`.
+ */
 export class FakeDemoAccountService implements DemoAccountService {
   readonly users = new Map<string, { id: string; password: string }>();
+  readonly resets: string[] = [];
 
   constructor(private readonly verifier: FakeAuthVerifier) {}
 
   async ensureUser(email: string, password: string) {
     const existing = this.users.get(email);
-    if (existing) {
-      existing.password = password;
-      return existing.id;
-    }
+    if (existing) return existing.id;
     const identity = this.verifier.addUser(email, { email });
     this.users.set(email, { id: identity.userId, password });
     return identity.userId;
   }
 
+  async resetPassword(email: string, password: string) {
+    const user = this.users.get(email);
+    if (!user) throw new Error('no such demo account');
+    user.password = password;
+    this.resets.push(email);
+  }
+
   async signIn(email: string, password: string) {
     const user = this.users.get(email);
-    if (!user || user.password !== password) throw new Error('bad demo credentials');
+    if (!user || user.password !== password) throw new DemoSignInRefused('bad demo credentials');
     return { userId: user.id, accessToken: email, refreshToken: `refresh-${email}`, expiresIn: 3600 };
   }
 }

@@ -7,7 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createApp } from '../src/app.js';
 import { DEMO_ORG_NAME, DEMO_PERSONAS, demoPassword } from '../src/domain/demo.js';
 import type { UserRole } from '../src/domain/types.js';
-import { SupabaseDemoAccountService } from '../src/services/demoAccounts.js';
+import { DemoSignInRefused, SupabaseDemoAccountService } from '../src/services/demoAccounts.js';
 import { seedIfEmpty } from '../src/services/demoWorkspace.js';
 import { buildTestDeps } from './support/fakes.js';
 
@@ -52,6 +52,34 @@ describe('one-click demo sign-in', () => {
     expect(organizations).toEqual([DEMO_ORG_NAME]);
     const members = await ctx.users.listForOrg([...ctx.users.organizations.keys()][0]!);
     expect(members.map((m) => m.role).sort()).toEqual(['admin', 'agent', 'customer']);
+  });
+
+  it('never resets a password on sign-in, so one visitor cannot sign another out', async () => {
+    // Supabase signs an account out everywhere when its password changes, so a
+    // reset on every sign-in would end the session of everyone else in the demo.
+    for (const persona of ['customer', 'admin', 'agent', 'customer', 'admin']) {
+      expect((await login(persona)).status).toBe(200);
+    }
+    expect(ctx.demoAccounts.resets).toEqual([]);
+  });
+
+  it('sets a demo password again only when Supabase refuses it', async () => {
+    await login('agent');
+    ctx.demoAccounts.users.get('agent@demo.safecall.app')!.password = 'derived from an older secret';
+
+    expect((await login('agent')).status).toBe(200);
+    expect((await login('agent')).status).toBe(200);
+    expect(ctx.demoAccounts.resets).toEqual(['agent@demo.safecall.app']);
+  });
+
+  it('does not reset anything when the sign-in service is down', async () => {
+    await login('customer');
+    vi.spyOn(ctx.demoAccounts, 'signIn').mockRejectedValue(new Error('Demo sign-in failed (503): unavailable'));
+
+    const res = await login('customer');
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/not available right now/);
+    expect(ctx.demoAccounts.resets).toEqual([]);
   });
 
   it('never sends a password to the browser, and only accepts the three personas', async () => {
@@ -180,6 +208,37 @@ describe('the Supabase demo sign-in', () => {
       (async () => new Response(JSON.stringify({ error_description: 'Invalid login credentials' }), { status: 400 })) as unknown as typeof fetch,
     );
     await expect(service.signIn('customer@demo.safecall.app', 'wrong')).rejects.toThrow(/Invalid login credentials/);
+    await expect(service.signIn('customer@demo.safecall.app', 'wrong')).rejects.toBeInstanceOf(DemoSignInRefused);
+  });
+
+  it('tells an outage apart from a wrong password, so an outage never resets anything', async () => {
+    const service = new SupabaseDemoAccountService(
+      { auth: { admin: {} } } as unknown as SupabaseClient,
+      'https://project.supabase.co',
+      'sb_secret_key',
+      (async () => new Response('upstream error', { status: 503 })) as unknown as typeof fetch,
+    );
+    const failure = await service.signIn('customer@demo.safecall.app', 'pw').catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(DemoSignInRefused);
+  });
+
+  it('leaves an existing account alone and only changes a password when asked to', async () => {
+    const updateUserById = vi.fn(async () => ({ data: {}, error: null }));
+    const createUser = vi.fn();
+    const listUsers = vi.fn(async () => ({ data: { users: [{ id: 'user-7', email: 'agent@demo.safecall.app' }] }, error: null }));
+    const service = new SupabaseDemoAccountService(
+      { auth: { admin: { updateUserById, createUser, listUsers } } } as unknown as SupabaseClient,
+      'https://project.supabase.co',
+      'sb_secret_key',
+    );
+
+    expect(await service.ensureUser('agent@demo.safecall.app', 'pw')).toBe('user-7');
+    expect(updateUserById).not.toHaveBeenCalled();
+    expect(createUser).not.toHaveBeenCalled();
+
+    await service.resetPassword('agent@demo.safecall.app', 'pw');
+    expect(updateUserById).toHaveBeenCalledWith('user-7', { password: 'pw', email_confirm: true });
   });
 });
 

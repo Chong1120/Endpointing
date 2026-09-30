@@ -3,12 +3,14 @@ import type { AppDeps } from '../http/appDeps.js';
 import { describeError } from '../pipeline/failures.js';
 import { intakeCall } from '../pipeline/intake.js';
 import { resolvePolicies } from '../services/assemblyai/policies.js';
-import type { DemoSession } from './demoAccounts.js';
+import { DemoSignInRefused, type DemoSession } from './demoAccounts.js';
 
 /**
  * One shared workspace behind the three demo logins. It is built on first use
  * and repaired on every sign-in, so a visitor who changes a role or deletes
- * something cannot leave the next visitor with a broken demo.
+ * something cannot leave the next visitor with a broken demo. Passwords are
+ * the exception: changing one signs that account out everywhere, so a password
+ * is only set again when Supabase actually refuses it.
  *
  * The seeded calls are the bundled synthetic recordings, run through the real
  * pipeline. Nothing here bypasses redaction.
@@ -40,7 +42,17 @@ async function build(deps: AppDeps): Promise<string> {
 /** Signs a visitor in as one of the personas, building the workspace if needed. */
 export async function startDemoSession(deps: AppDeps, persona: DemoPersona): Promise<{ orgId: string; session: DemoSession }> {
   const orgId = await ensureDemoWorkspace(deps);
-  const session = await deps.demoAccounts.signIn(persona.email, demoPassword(deps.config.assemblyai.webhookSecret, persona.email));
+  const password = demoPassword(deps.config.assemblyai.webhookSecret, persona.email);
+  let session: DemoSession;
+  try {
+    session = await deps.demoAccounts.signIn(persona.email, password);
+  } catch (error) {
+    // The secret changed since the account was made. Setting the password again
+    // signs out everyone using this persona, which is why it only happens here.
+    if (!(error instanceof DemoSignInRefused)) throw error;
+    await deps.demoAccounts.resetPassword(persona.email, password);
+    session = await deps.demoAccounts.signIn(persona.email, password);
+  }
   // Seeding runs in the background: the visitor should not wait on AssemblyAI.
   if (deps.demoSeeding) {
     void seedIfEmpty(deps, orgId).catch((error) => deps.logger.error({ err: describeError(error) }, 'demo seeding failed'));
