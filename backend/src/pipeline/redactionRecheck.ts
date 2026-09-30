@@ -29,7 +29,7 @@ export interface RecheckResult {
  * pass only ever sees audio that was already redacted.
  */
 export async function recheckRedaction(deps: PipelineDeps, call: CallRecord): Promise<RecheckResult> {
-  const findings = findLeftoverPii(call.redacted_transcript);
+  const findings = findLeftoverPii(call.redacted_transcript, call.pii_policies);
   if (findings.length === 0) return { status: 'clean', found: 0, labels: [] };
 
   const labels = [...new Set(findings.map((finding) => finding.label))].sort();

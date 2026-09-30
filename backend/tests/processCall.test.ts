@@ -95,6 +95,54 @@ describe('successful processing', () => {
     for (const value of RAW_PII_VALUES) expect(stored).not.toContain(value);
   });
 
+  it('redacts what AssemblyAI missed before the AI reads it and before the call counts as complete', async () => {
+    // The first pass left "the security code is 123" readable.
+    const leaky = 'Sure, the security code is 123.';
+    const cleaned = 'Sure, the security code is [CREDIT_CARD_CVV].';
+    const turn = (text: string) => [{ speaker: 'B', start: 0, end: 3000, text, confidence: 0.95, words: [] }];
+    ctx.transcription.results.set('transcript-orig', {
+      status: 'completed',
+      transcript: toSafeTranscript(redactedTranscriptFixture('transcript-orig', { text: leaky, utterances: turn(leaky) })),
+    });
+    // The second pass (redact_static_entities) comes back as transcript-1.
+    ctx.transcription.results.set('transcript-1', {
+      status: 'completed',
+      transcript: toSafeTranscript(redactedTranscriptFixture('transcript-1', { text: cleaned, utterances: turn(cleaned) })),
+    });
+    const seeded = await seedTranscribingCall(ctx, 'transcript-orig');
+    await ctx.calls.update(seeded.id, { pii_policies: ['person_name', 'credit_card_cvv'] });
+
+    await processCall(ctx.deps, { callId: seeded.id, transcriptId: 'transcript-orig', trigger: 'webhook' }, ATTEMPT_1);
+
+    const call = ctx.calls.calls.get(seeded.id)!;
+    expect(call.status).toBe('COMPLETED');
+    expect(call.redacted_transcript).toBe(cleaned);
+    expect(ctx.transcription.submissions[0]?.staticEntities).toEqual({ CREDIT_CARD_CVV: ['123'] });
+    expect(ctx.analysis.inputs).toEqual(['Speaker B: Sure, the security code is [CREDIT_CARD_CVV].']);
+    const types = ctx.auditEvents.typesFor(seeded.id);
+    expect(types.indexOf('EXTRA_PII_REDACTED')).toBeLessThan(types.indexOf('AI_ANALYSIS_COMPLETED'));
+    expect(types.indexOf('EXTRA_PII_REDACTED')).toBeLessThan(types.indexOf('ARCHIVE_CREATED'));
+  });
+
+  it('keeps a missed value from the AI even when the second pass cannot run', async () => {
+    const leaky = 'Sure, the security code is 123.';
+    ctx.transcription.results.set('transcript-orig', {
+      status: 'completed',
+      transcript: toSafeTranscript(
+        redactedTranscriptFixture('transcript-orig', { text: leaky, utterances: [{ speaker: 'B', start: 0, end: 3000, text: leaky, confidence: 0.95, words: [] }] }),
+      ),
+    });
+    ctx.transcription.submitError = new Error('AssemblyAI is unavailable');
+    const seeded = await seedTranscribingCall(ctx, 'transcript-orig');
+    await ctx.calls.update(seeded.id, { pii_policies: ['person_name', 'credit_card_cvv'] });
+
+    await processCall(ctx.deps, { callId: seeded.id, transcriptId: 'transcript-orig', trigger: 'webhook' }, ATTEMPT_1);
+
+    expect(ctx.calls.calls.get(seeded.id)!.status).toBe('COMPLETED');
+    expect(ctx.analysis.inputs).toHaveLength(1);
+    expect(ctx.analysis.inputs[0]).not.toContain('123');
+  });
+
   it('skips AI analysis when disabled for the call', async () => {
     const seeded = await seedTranscribingCall(ctx, 'transcript-1', false);
     await processCall(ctx.deps, { callId: seeded.id, transcriptId: 'transcript-1', trigger: 'webhook' }, ATTEMPT_1);

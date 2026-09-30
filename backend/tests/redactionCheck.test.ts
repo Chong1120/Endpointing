@@ -32,6 +32,24 @@ describe('finding values the first redaction pass missed', () => {
     expect(findLeftoverPii(null)).toEqual([]);
   });
 
+  it('catches a date of birth said after "date of birth", "born on" or "DOB"', () => {
+    // Seen live: Universal-3.5 Pro left this readable with date_of_birth in the policy.
+    expect(findLeftoverPii('It is [PERSON_NAME], and my date of birth is March 14th. 1987. Thank you.')).toEqual([
+      { label: 'DATE_OF_BIRTH', term: 'March 14th. 1987' },
+    ]);
+    expect(findLeftoverPii('I was born on 14 March 1987')).toEqual([{ label: 'DATE_OF_BIRTH', term: '14 March 1987' }]);
+    expect(findLeftoverPii('DOB: 03/14/1987')).toEqual([{ label: 'DATE_OF_BIRTH', term: '03/14/1987' }]);
+    expect(findLeftoverPii('date of birth 1987-03-14')).toEqual([{ label: 'DATE_OF_BIRTH', term: '1987-03-14' }]);
+    // Other dates are ordinary conversation.
+    expect(findLeftoverPii('The charge on March 14th, 2026 was a duplicate.')).toEqual([]);
+    expect(findLeftoverPii('my date of birth is March 14th. 1987', ['person_name'])).toEqual([]);
+  });
+
+  it('only looks for the types the call redacts, so a type an admin turned off stays', () => {
+    expect(findLeftoverPii(LEAKY, ['person_name', 'credit_card_cvv'])).toEqual([{ label: 'CREDIT_CARD_CVV', term: '123' }]);
+    expect(findLeftoverPii('send it to kevin.walsh@example.com', ['person_name', 'phone_number'])).toEqual([]);
+  });
+
   it('groups terms by label for AssemblyAI and can mask text locally', () => {
     const findings = findLeftoverPii(LEAKY);
     expect(staticEntityMap(findings)).toEqual({ CREDIT_CARD_CVV: ['123'], PHONE_NUMBER: ['415-555-0197'] });
@@ -124,6 +142,20 @@ describe('rechecking an archived call', () => {
     expect(stored.redacted_transcript).not.toContain('415-555-0197');
     expect(stored.redacted_transcript).not.toContain('is 123');
     expect((await ctx.calls.listUtterances(call.id))[0]?.text).not.toContain('415-555-0197');
+  });
+
+  it('sends back only the types the call redacts', async () => {
+    const ctx = buildTestDeps();
+    const call = await archivedCall(ctx, { pii_policies: ['person_name', 'credit_card_cvv'] });
+    ctx.transcription.results.set('transcript-1', {
+      status: 'completed',
+      transcript: toSafeTranscript(redactedTranscriptFixture('transcript-1', { text: CLEANED, utterances: [] })),
+    });
+
+    const result = await recheckRedaction(ctx.deps, call);
+
+    expect(result.labels).toEqual(['CREDIT_CARD_CVV']);
+    expect(ctx.transcription.submissions[0]?.staticEntities).toEqual({ CREDIT_CARD_CVV: ['123'] });
   });
 
   it('does nothing when the transcript is already clean', async () => {

@@ -30,7 +30,18 @@ interface Rule {
   group?: number;
 }
 
+const MONTH = '(?:january|february|march|april|may|june|july|august|september|october|november|december)';
+
 const RULES: Rule[] = [
+  // "my date of birth is March 14th. 1987", "born on 14 March 1987", "DOB: 03/14/1987"
+  {
+    label: 'DATE_OF_BIRTH',
+    pattern: new RegExp(
+      `\\b(?:date of birth|birth ?date|born on|dob)\\b(?:\\s+(?:is|was))?\\s*[:,-]?\\s*(${MONTH}\\s+\\d{1,2}(?:st|nd|rd|th)?[.,]?\\s+\\d{4}|\\d{1,2}(?:st|nd|rd|th)?\\s+(?:of\\s+)?${MONTH}[.,]?\\s+\\d{4}|\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}|\\d{4}-\\d{2}-\\d{2})`,
+      'gi',
+    ),
+    group: 1,
+  },
   // "the security code is 123", "CVV 456", "PIN is 9021"
   {
     label: 'CREDIT_CARD_CVV',
@@ -65,15 +76,21 @@ function markerRanges(text: string): Range[] {
   return ranges;
 }
 
-/** Values still readable in an already-redacted transcript. */
-export function findLeftoverPii(text: string | null | undefined): LeftoverPii[] {
+/**
+ * Values still readable in an already-redacted transcript. Given the call's
+ * `policies`, only the entity types that call redacts: an admin who turned a
+ * type off in the PII policies keeps it, here as in AssemblyAI's pass.
+ */
+export function findLeftoverPii(text: string | null | undefined, policies?: readonly string[]): LeftoverPii[] {
   if (!text) return [];
+  const selected = policies ? new Set(policies) : null;
   const blocked = markerRanges(text);
   const claimed: Range[] = [];
   const seen = new Set<string>();
   const found: LeftoverPii[] = [];
 
   for (const rule of RULES) {
+    if (selected && !selected.has(rule.label.toLowerCase())) continue;
     for (const match of text.matchAll(rule.pattern)) {
       const raw = rule.group ? match[rule.group] : match[0];
       if (!raw) continue;
@@ -86,7 +103,7 @@ export function findLeftoverPii(text: string | null | undefined): LeftoverPii[] 
       const digits = (term.match(/\d/g) ?? []).length;
       const looksLikeEmail = term.includes('@') || /\sat\s/i.test(term);
       if (!looksLikeEmail && digits < 3) continue;
-      if (DATE_LIKE.test(term)) continue;
+      if (DATE_LIKE.test(term) && rule.label !== 'DATE_OF_BIRTH') continue;
 
       claimed.push([start, end]);
       const key = `${rule.label}:${term.toLowerCase()}`;

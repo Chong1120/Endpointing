@@ -5,6 +5,7 @@ import type { SafeTranscript } from '../services/assemblyai/safeTranscript.js';
 import { speakerTranscriptFromArchive } from '../services/assemblyai/safeTranscript.js';
 import { AnalysisValidationError } from '../services/llm/analysis.js';
 import { countPiiMarkers, countRedactionMarkers, summarizePii } from '../services/pii.js';
+import { findLeftoverPii, maskLeftovers } from '../services/redactionCheck.js';
 import { AUDIO_CONTENT_TYPES, buildSafeAudioPath } from '../services/storage/safeAudioStorage.js';
 import { nowIso, sleepFor, type PipelineDeps } from './deps.js';
 import { describeError, markCallFailed } from './failures.js';
@@ -178,6 +179,19 @@ async function runStages(
     visibility: 'private',
   });
 
+  // 3b. Second opinion on the redaction, before the AI or anyone else reads
+  //     the transcript: values AssemblyAI missed are redacted again, in the
+  //     text and in the audio. Best effort: a failure never fails the call.
+  try {
+    const recheck = await recheckRedaction(deps, call);
+    if (recheck.found > 0) {
+      deps.logger.info({ callId: call.id, ...recheck }, 'redaction rechecked before analysis');
+      call = (await deps.calls.findByIdForSystem(call.id)) ?? call;
+    }
+  } catch (error) {
+    deps.logger.warn({ callId: call.id, err: describeError(error) }, 'redaction recheck failed');
+  }
+
   // 4. AI analysis — input is rebuilt from the archived REDACTED utterances --
   tracker.stage = 'AI_ANALYSIS';
   if (!call.analysis_enabled) {
@@ -187,7 +201,12 @@ async function runStages(
   } else {
     let meta: Record<string, unknown> = { model: call.ai_summary?.model ?? null };
     if (!call.ai_summary) {
-      const safeInput = speakerTranscriptFromArchive(await deps.calls.listUtterances(call.id));
+      // Should the second pass have failed, what it would catch still never reaches the model.
+      const utterances = (await deps.calls.listUtterances(call.id)).map((utterance) => ({
+        ...utterance,
+        text: maskLeftovers(utterance.text, findLeftoverPii(utterance.text, call.pii_policies)),
+      }));
+      const safeInput = speakerTranscriptFromArchive(utterances);
       try {
         const result = await deps.analysis.analyze(safeInput);
         call = await deps.calls.update(call.id, {
@@ -242,16 +261,6 @@ async function runStages(
     ai_analysis: Boolean(call.ai_summary),
     processing_seconds: Math.max(0, Math.round((Date.parse(processedAt) - Date.parse(call.created_at)) / 1000)),
   });
-
-  // 6. Second opinion on the redaction. Anything AssemblyAI left in the
-  //    transcript is redacted again, in the text and in the audio. Best effort:
-  //    the archive is already complete, so a failure here never fails the call.
-  try {
-    const recheck = await recheckRedaction(deps, call);
-    if (recheck.found > 0) deps.logger.info({ callId: call.id, ...recheck }, 'redaction rechecked after archiving');
-  } catch (error) {
-    deps.logger.warn({ callId: call.id, err: describeError(error) }, 'redaction recheck failed');
-  }
 }
 
 async function waitForRedactedAudio(deps: PipelineDeps, transcriptId: string): Promise<string> {
