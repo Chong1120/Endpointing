@@ -116,6 +116,47 @@ describe('archiving a finished live-agent call', () => {
     expect(ctx.calls.calls.size).toBe(0);
   });
 
+  it("archives the browser's own recording, without fetching AssemblyAI's copy", async () => {
+    const sessionId = await finishedCallFor('alice');
+    const res = await request(app)
+      .post(`/api/voice-agent/sessions/${sessionId}/archive`)
+      .set(as('alice'))
+      .field('escalation_reason', 'customer_requested')
+      .attach('file', Buffer.from('webm-fake-browser-recording'), 'live-agent-call.webm');
+
+    expect(res.status).toBe(202);
+    expect(res.body.follow_up).toBe('customer_requested');
+    expect(res.body.call.original_filename).toMatch(/^live-agent-call-.*\.webm$/);
+    expect(ctx.voiceAgent.downloads).toEqual([]);
+    expect(ctx.transcription.uploadedPaths).toHaveLength(1);
+    expect(readdirSync(tmp)).toEqual([]);
+    // The unredacted session at AssemblyAI is still deleted, in the background.
+    await vi.waitFor(() => expect(ctx.voiceAgent.deleted).toEqual([sessionId]));
+  });
+
+  it('archives the recording even while AssemblyAI says the session does not exist', async () => {
+    await request(app).post('/api/voice-agent/session').set(as('alice'));
+    const res = await request(app)
+      .post('/api/voice-agent/sessions/sess_not_visible_yet/archive')
+      .set(as('alice'))
+      .attach('file', Buffer.from('webm-fake-browser-recording'), 'live-agent-call.webm');
+
+    expect(res.status).toBe(202);
+    expect(res.body.call.status).toBe('TRANSCRIBING');
+    expect(readdirSync(tmp)).toEqual([]);
+  });
+
+  it('refuses a recording when no live call was started, and keeps no file', async () => {
+    const res = await request(app)
+      .post('/api/voice-agent/sessions/sess_9a648a2ab75747a9/archive')
+      .set(as('alice'))
+      .attach('file', Buffer.from('webm-fake'), 'live-agent-call.webm');
+
+    expect(res.status).toBe(403);
+    expect(ctx.transcription.uploadedPaths).toEqual([]);
+    expect(readdirSync(tmp)).toEqual([]);
+  });
+
   it('reports an unknown or already archived session as not found', async () => {
     const res = await request(app).post('/api/voice-agent/sessions/sess_unknown123/archive').set(as('alice'));
     expect(res.status).toBe(404);

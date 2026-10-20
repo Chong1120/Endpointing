@@ -400,7 +400,7 @@ npm test            # both suites: API (AssemblyAI + LLM Gateway mocked) and the
 npm run typecheck   # backend + frontend
 ```
 
-159 tests. Coverage includes:
+162 tests. Coverage includes:
 - upload validation and temp-file cleanup;
 - authentication and organization isolation;
 - PII counting (including grouping of word-level markers);

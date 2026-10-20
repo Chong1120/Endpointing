@@ -26,6 +26,8 @@ const TOOL_RESULT_DEADLINE_MS = 6_000;
  */
 const AGENT_SILENCE_MS = 7_000;
 const MAX_NUDGES_PER_TURN = 2;
+/** Containers for the browser's own copy of the call, in order of preference. */
+const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 
 export interface SpeakingState {
   caller: boolean;
@@ -126,10 +128,21 @@ export class LiveAgentCall {
   escalation: EscalationReason | null = null;
   /** Resolves when the call is over, with the session id to archive (null if it never started). */
   readonly finished: Promise<string | null>;
+  /**
+   * Resolves once the call is over, with the browser's own recording of it:
+   * the caller's microphone and the agent's voice, as heard. It is sent to
+   * SafeCall at hang-up, so saving the call does not depend on AssemblyAI
+   * returning the session recording, which it can report as not found.
+   * Null when the browser could not record.
+   */
+  readonly recording: Promise<Blob | null>;
 
   private readonly events: LiveCallEvents;
   private readonly runTool = createNorthwindBackOffice();
   private resolveFinished: (sessionId: string | null) => void = () => undefined;
+  private resolveRecording: (recording: Blob | null) => void = () => undefined;
+  private recorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
   private done = false;
   private ready = false;
   private ws: WebSocket | null = null;
@@ -170,6 +183,9 @@ export class LiveAgentCall {
     this.events = events;
     this.finished = new Promise((resolve) => {
       this.resolveFinished = resolve;
+    });
+    this.recording = new Promise((resolve) => {
+      this.resolveRecording = resolve;
     });
   }
 
@@ -228,6 +244,7 @@ export class LiveAgentCall {
     mic.connect(this.analyser);
     this.agentOut = context.createGain();
     this.agentOut.connect(context.destination);
+    this.startRecording(context, mic, this.agentOut);
     this.startLevelMeter();
 
     const url = new URL(session.websocket_url);
@@ -424,6 +441,51 @@ export class LiveAgentCall {
     this.setSpeaking({ agent: false });
   }
 
+  /** Mixes the microphone and the agent's voice into one recording of the call. */
+  private startRecording(context: AudioContext, mic: MediaStreamAudioSourceNode, agentOut: GainNode) {
+    if (typeof MediaRecorder === 'undefined') return;
+    try {
+      const mix = context.createMediaStreamDestination();
+      mic.connect(mix);
+      agentOut.connect(mix);
+      const mimeType = RECORDING_TYPES.find((type) => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(mix.stream, mimeType ? { mimeType, audioBitsPerSecond: 64_000 } : undefined);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.start(1_000);
+      this.recorder = recorder;
+      this.recordedChunks = chunks;
+    } catch {
+      // The call goes on without a copy; archiving then falls back to AssemblyAI's recording.
+      this.recorder = null;
+    }
+  }
+
+  /** Stops recording and resolves `recording`, after the recorder hands over its last chunk. */
+  private stopRecording() {
+    const recorder = this.recorder;
+    const chunks = this.recordedChunks;
+    this.recorder = null;
+    const done = () => this.resolveRecording(chunks.length > 0 ? new Blob(chunks, { type: recorder?.mimeType || 'audio/webm' }) : null);
+    if (!recorder || recorder.state === 'inactive') {
+      done();
+      return;
+    }
+    const timer = window.setTimeout(done, 3_000);
+    recorder.onstop = () => {
+      window.clearTimeout(timer);
+      done();
+    };
+    try {
+      recorder.stop();
+    } catch {
+      window.clearTimeout(timer);
+      done();
+    }
+  }
+
   private startLevelMeter() {
     const analyser = this.analyser;
     if (!analyser) return;
@@ -452,6 +514,8 @@ export class LiveAgentCall {
   }
 
   private teardown() {
+    // Before the audio graph is taken apart, so the recording keeps its last moments.
+    this.stopRecording();
     if (this.hangupTimer !== null) window.clearTimeout(this.hangupTimer);
     if (this.levelTimer !== null) window.clearInterval(this.levelTimer);
     if (this.silenceTimer !== null) window.clearInterval(this.silenceTimer);

@@ -148,6 +148,8 @@ export function LiveAgentPage({
   const callRef = useRef<LiveAgentCall | null>(null);
   // Read when the call is archived, which can happen after the call object is gone.
   const escalationRef = useRef<string | null>(null);
+  // The browser's own copy of the last call, kept so "Archive this call" can send it again.
+  const recordingRef = useRef<Blob | null>(null);
   const tokenRef = useRef<string | null>(null);
   const liveSince = useRef(0);
   const mounted = useRef(true);
@@ -186,7 +188,7 @@ export function LiveAgentPage({
     setStage('archiving');
     setUnarchived(sessionId);
     try {
-      const { call } = await api.archiveLiveAgentCall(sessionId, escalationRef.current);
+      const { call } = await api.archiveLiveAgentCall(sessionId, escalationRef.current, recordingRef.current);
       if (!mounted.current) return;
       notify(
         escalationRef.current
@@ -219,6 +221,7 @@ export function LiveAgentPage({
     setUnarchived(null);
     setEscalated(false);
     escalationRef.current = null;
+    recordingRef.current = null;
     setStage('connecting');
 
     const outcome = { failed: false };
@@ -272,6 +275,7 @@ export function LiveAgentPage({
     if (callRef.current !== call) return; // Left the page: archived in the background.
     callRef.current = null;
     escalationRef.current = call.escalation;
+    recordingRef.current = await call.recording;
     setHangingUp(false);
     if (sessionId) await archive(sessionId);
     else setStage(outcome.failed ? 'failed' : 'idle');

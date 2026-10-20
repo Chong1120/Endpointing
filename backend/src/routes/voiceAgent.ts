@@ -1,10 +1,13 @@
+import path from 'node:path';
 import { Router } from 'express';
 import { badRequest, conflict, serviceUnavailable, tooManyRequests } from '../errors.js';
 import type { AppDeps } from '../http/appDeps.js';
 import { presentCall } from '../http/presenters.js';
 import { getAuth, requirePermission } from '../middleware/auth.js';
+import { createUploadMiddleware } from '../middleware/upload.js';
 import { describeError } from '../pipeline/failures.js';
-import { archiveVoiceSession } from '../pipeline/voiceSession.js';
+import { removeTempFile } from '../pipeline/intake.js';
+import { archiveRecordedCall, archiveVoiceSession } from '../pipeline/voiceSession.js';
 import {
   LIVE_AGENT_MAX_SESSION_SECONDS,
   LIVE_AGENT_TOKEN_TTL_SECONDS,
@@ -19,8 +22,10 @@ const SESSION_ID = /^[A-Za-z0-9_-]{6,128}$/;
 /** Why the agent handed the call to a person. No free text, so nothing the caller said travels with it. */
 const ESCALATION_REASONS = ['customer_requested', 'upset_customer', 'out_of_scope', 'payment_issue'];
 
+/** JSON sends `{ escalation: { reason } }`; a recording upload sends the `escalation_reason` form field. */
 function escalationReason(body: unknown): string | null {
-  const value = (body as { escalation?: { reason?: unknown } } | null)?.escalation?.reason;
+  const fields = body as { escalation?: { reason?: unknown }; escalation_reason?: unknown } | null;
+  const value = fields?.escalation?.reason ?? fields?.escalation_reason;
   return typeof value === 'string' && ESCALATION_REASONS.includes(value) ? value : null;
 }
 
@@ -28,6 +33,7 @@ function escalationReason(body: unknown): string | null {
 export function voiceAgentRouter(deps: AppDeps): Router {
   const router = Router();
   const archiving = new Set<string>();
+  const upload = createUploadMiddleware(deps.config);
 
   router.post('/session', requirePermission('agent:call'), async (req, res) => {
     const auth = getAuth(req);
@@ -65,14 +71,27 @@ export function voiceAgentRouter(deps: AppDeps): Router {
     });
   });
 
-  router.post('/sessions/:sessionId/archive', requirePermission('agent:call'), async (req, res) => {
+  // With a recording attached (the browser's own copy of the call), the call is
+  // archived from it; without one, the recording is fetched from AssemblyAI.
+  router.post('/sessions/:sessionId/archive', requirePermission('agent:call'), upload, async (req, res) => {
     const auth = getAuth(req);
     const sessionId = String(req.params.sessionId);
-    if (!SESSION_ID.test(sessionId)) throw badRequest('Invalid session id.');
-    if (archiving.has(sessionId)) throw conflict('This call is already being archived.');
+    const file = req.file;
+    const refuse = async (error: Error) => {
+      if (file) await removeTempFile(file.path, deps);
+      throw error;
+    };
+    if (!SESSION_ID.test(sessionId)) await refuse(badRequest('Invalid session id.'));
+    if (archiving.has(sessionId)) await refuse(conflict('This call is already being archived.'));
     archiving.add(sessionId);
     try {
-      const call = await archiveVoiceSession(deps, auth, sessionId);
+      const call = file
+        ? await archiveRecordedCall(deps, auth, sessionId, {
+            path: file.path,
+            sizeBytes: file.size,
+            extension: path.extname(file.originalname).toLowerCase(),
+          })
+        : await archiveVoiceSession(deps, auth, sessionId);
       const reason = escalationReason(req.body);
       if (reason) {
         await deps.audit.record({

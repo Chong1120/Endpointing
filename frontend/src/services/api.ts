@@ -124,6 +124,22 @@ const archivePath = (sessionId: string) => `/api/voice-agent/sessions/${encodeUR
 const archiveBody = (escalation?: string | null) => JSON.stringify(escalation ? { escalation: { reason: escalation } } : {});
 
 /**
+ * With the browser's own recording of the call attached, SafeCall archives
+ * from it instead of fetching AssemblyAI's copy, which AssemblyAI can report
+ * as not found. Without one, the API falls back to AssemblyAI's recording.
+ */
+function archiveLiveAgentCall(sessionId: string, escalation?: string | null, recording?: Blob | null) {
+  if (!recording) {
+    return request<{ call: Call; follow_up: string | null }>(archivePath(sessionId), { method: 'POST', body: archiveBody(escalation) });
+  }
+  const extension = recording.type.includes('ogg') ? 'ogg' : recording.type.includes('mp4') ? 'm4a' : 'webm';
+  const form = new FormData();
+  if (escalation) form.set('escalation_reason', escalation);
+  form.set('file', new File([recording], `live-agent-call.${extension}`, { type: recording.type || 'audio/webm' }));
+  return request<{ call: Call; follow_up: string | null }>(archivePath(sessionId), { method: 'POST', body: form });
+}
+
+/**
  * Archives a live-agent call while the page is closing. `keepalive` lets the
  * request outlive the tab, and the API finishes the work even if nobody waits.
  */
@@ -162,8 +178,7 @@ export const api = {
       body: JSON.stringify({ analysis_enabled: analysisEnabled }),
     }),
   startLiveAgent: () => request<LiveAgentSession>('/api/voice-agent/session', { method: 'POST' }),
-  archiveLiveAgentCall: (sessionId: string, escalation?: string | null) =>
-    request<{ call: Call; follow_up: string | null }>(archivePath(sessionId), { method: 'POST', body: archiveBody(escalation) }),
+  archiveLiveAgentCall,
   followUps: () => request<{ items: FollowUp[]; total: number }>('/api/follow-ups'),
   resolveFollowUp: (callId: string) => request<void>(`/api/calls/${callId}/follow-up/resolve`, { method: 'POST' }),
   demoPersonas: () => request<{ personas: DemoPersona[]; notice: string }>('/api/demo/personas'),
